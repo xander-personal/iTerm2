@@ -80,6 +80,8 @@ extern NSString *const iTermAPIServerConnectionClosed;
                                    handler:(void (^)(ITMStatusBarComponentResponse *))response;
 - (void)apiServerSetBroadcastDomainsRequest:(ITMSetBroadcastDomainsRequest *)request
                                     handler:(void (^)(ITMSetBroadcastDomainsResponse *))completion;
+- (void)apiServerCloseRequest:(ITMCloseRequest *)request
+                      handler:(void (^)(ITMCloseResponse *))response;
 
 @end
 
@@ -88,5 +90,6 @@ extern NSString *const iTermAPIServerConnectionClosed;
 @property (nonatomic, weak) id<iTermAPIServerDelegate> delegate;
 
 - (void)postAPINotification:(ITMNotification *)notification toConnectionKey:(NSString *)connectionKey;
+- (NSString *)websocketKeyForConnectionKey:(NSString *)connectionKey;
 
 @end

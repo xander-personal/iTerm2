@@ -180,7 +180,7 @@ BOOL CheckFindMatchAtIndex(NSData *findMatches, int index);
 // Should the cursor guide be shown?
 @property(nonatomic, assign) BOOL highlightCursorLine;
 
-// Mimimum contrast level, 0-1.
+// Minimum contrast level, 0-1.
 @property(nonatomic, assign) double minimumContrast;
 
 // Should the non-ascii font be used?
@@ -286,6 +286,7 @@ BOOL CheckFindMatchAtIndex(NSData *findMatches, int index);
 @property (nonatomic, readonly, class) NSColor *successMarkColor;
 @property (nonatomic, readonly, class) NSColor *errorMarkColor;
 @property (nonatomic, readonly, class) NSColor *otherMarkColor;
+@property (nonatomic) BOOL useNativePowerlineGlyphs;
 
 // imageSize: size of image to draw
 // destinationRect: rect bounding the region of a scrollview's content view (i.e., very tall view) that's being drawn
@@ -365,7 +366,7 @@ NS_INLINE BOOL iTermTextDrawingHelperIsCharacterDrawable(const screen_char_t *co
 
         }
     } else {
-        // Chatacter hidden because of blinking.
+        // Character hidden because of blinking.
         return NO;
     }
 }

@@ -33,7 +33,7 @@ typedef NS_OPTIONS(NSUInteger, PTYTabState) {
 - (void)tab:(PTYTab *)tab didChangeIcon:(NSImage *)icon;
 - (void)tab:(PTYTab *)tab didChangeObjectCount:(NSInteger)objectCount;
 - (void)tabKeyLabelsDidChangeForSession:(PTYSession *)session;
-- (void)tab:(PTYTab *)tab currentLocationDidChange:(NSURL *)location;
+- (void)tab:(PTYTab *)tab proxyIconDidChange:(NSURL *)location;
 - (void)tabRemoveTab:(PTYTab *)tab;
 - (void)tab:(PTYTab *)tab didChangeToState:(PTYTabState)newState;
 - (void)tabDidChangeTmuxLayout:(PTYTab *)tab;
@@ -45,5 +45,7 @@ typedef NS_OPTIONS(NSUInteger, PTYTabState) {
 - (BOOL)tabCanUseMetal:(PTYTab *)tab reason:(out iTermMetalUnavailableReason *)reason;
 - (BOOL)tabShouldUseTransparency:(PTYTab *)tab;
 - (void)numberOfSessionsDidChangeInTab:(PTYTab *)tab;
+- (void)sessionBackgroundColorDidChangeInTab:(PTYTab *)tab;
+- (BOOL)tabAnyDragInProgress:(PTYTab *)tab;
 
 @end

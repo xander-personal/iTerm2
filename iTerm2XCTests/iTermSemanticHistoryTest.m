@@ -308,6 +308,24 @@
     XCTAssert(columnNumber.integerValue == 456);
 }
 
+- (void)testGetFullPathExtractsAlternateLineNumberAndColumnSyntax_NoSpaceAfterComma {
+    NSString *lineNumber = nil;
+    NSString *columnNumber = nil;
+    static NSString *const kFilename = @"/path/to/file";
+    static NSString *const kWorkingDirectory = @"/working/directory";
+    NSString *kFilenameWithLineNumber = [kFilename stringByAppendingString:@"[123,456]"];
+    [_semanticHistoryController.fakeFileManager.files addObject:kFilename];
+    NSString *actual = [_semanticHistoryController cleanedUpPathFromPath:kFilenameWithLineNumber
+                                                                  suffix:nil
+                                                        workingDirectory:kWorkingDirectory
+                                                     extractedLineNumber:&lineNumber
+                                                            columnNumber:&columnNumber];
+    NSString *expected = kFilename;
+    XCTAssert([expected isEqualToString:actual]);
+    XCTAssert(lineNumber.integerValue == 123);
+    XCTAssert(columnNumber.integerValue == 456);
+}
+
 - (void)testGetFullPathExtractsVeryVerboseLineNumberAndColumnSyntax {
     NSString *lineNumber = nil;
     NSString *columnNumber = nil;
@@ -316,6 +334,42 @@
     [_semanticHistoryController.fakeFileManager.files addObject:kFilename];
     NSString *actual = [_semanticHistoryController cleanedUpPathFromPath:kFilename
                                                                   suffix:@"\", line 123, column 456"
+                                                        workingDirectory:kWorkingDirectory
+                                                     extractedLineNumber:&lineNumber
+                                                            columnNumber:&columnNumber];
+    NSString *expected = kFilename;
+    XCTAssert([expected isEqualToString:actual]);
+    XCTAssert(lineNumber.integerValue == 123);
+    XCTAssert(columnNumber.integerValue == 456);
+}
+
+- (void)testGetFullPathExtractsParenthesesLineNumberAndColumnSyntax {
+    NSString *lineNumber = nil;
+    NSString *columnNumber = nil;
+    static NSString *const kFilename = @"/path/to/file";
+    static NSString *const kWorkingDirectory = @"/working/directory";
+    NSString *kFilenameWithLineNumber = [kFilename stringByAppendingString:@"(123, 456)"];
+    [_semanticHistoryController.fakeFileManager.files addObject:kFilename];
+    NSString *actual = [_semanticHistoryController cleanedUpPathFromPath:kFilenameWithLineNumber
+                                                                  suffix:@""
+                                                        workingDirectory:kWorkingDirectory
+                                                     extractedLineNumber:&lineNumber
+                                                            columnNumber:&columnNumber];
+    NSString *expected = kFilename;
+    XCTAssert([expected isEqualToString:actual]);
+    XCTAssert(lineNumber.integerValue == 123);
+    XCTAssert(columnNumber.integerValue == 456);
+}
+
+- (void)testGetFullPathExtractsParenthesesLineNumberAndColumnSyntax_NoSpaceAfterComma {
+    NSString *lineNumber = nil;
+    NSString *columnNumber = nil;
+    static NSString *const kFilename = @"/path/to/file";
+    static NSString *const kWorkingDirectory = @"/working/directory";
+    NSString *kFilenameWithLineNumber = [kFilename stringByAppendingString:@"(123,456)"];
+    [_semanticHistoryController.fakeFileManager.files addObject:kFilename];
+    NSString *actual = [_semanticHistoryController cleanedUpPathFromPath:kFilenameWithLineNumber
+                                                                  suffix:@""
                                                         workingDirectory:kWorkingDirectory
                                                      extractedLineNumber:&lineNumber
                                                             columnNumber:&columnNumber];
@@ -954,6 +1008,44 @@
     XCTAssert([@"five six seven eight:123:456" isEqualToString:path]);
     XCTAssert(numCharsFromPrefix == [@"five six " length]);
     XCTAssert(numCharsFromSuffix == [@"seven eight:123:456" length]);
+}
+
+- (void)testPathOfExistingFileSupportsLineNumberAndColumnNumberInParens {
+    int numCharsFromPrefix;
+    int numCharsFromSuffix;
+    NSString *kWorkingDirectory = @"/directory";
+    NSString *kRelativeFilename = @"file.txt";
+    NSString *kFilename = [kWorkingDirectory stringByAppendingPathComponent:kRelativeFilename];
+    [_semanticHistoryController.fakeFileManager.files addObject:kFilename];
+    [_semanticHistoryController.fakeFileManager.directories addObject:kWorkingDirectory];
+    NSString *path = [_semanticHistoryController pathOfExistingFileFoundWithPrefix:@"file.txt(10"
+                                                                            suffix:@", 10)"
+                                                                  workingDirectory:kWorkingDirectory
+                                                              charsTakenFromPrefix:&numCharsFromPrefix
+                                                              charsTakenFromSuffix:&numCharsFromSuffix
+                                                                    trimWhitespace:NO];
+    XCTAssert([@"file.txt(10, 10)" isEqualToString:path]);
+    XCTAssert(numCharsFromPrefix == [@"file.txt(10" length]);
+    XCTAssert(numCharsFromSuffix == [@", 10)" length]);
+}
+
+- (void)testPathOfExistingFileFindsColumnAndLineNumber {
+    int numCharsFromPrefix;
+    int numCharsFromSuffix;
+    NSString *kWorkingDirectory = @"/directory";
+    NSString *kRelativeFilename = @"file.txt";
+    NSString *kFilename = [kWorkingDirectory stringByAppendingPathComponent:kRelativeFilename];
+    [_semanticHistoryController.fakeFileManager.files addObject:kFilename];
+    [_semanticHistoryController.fakeFileManager.directories addObject:kWorkingDirectory];
+    NSString *path = [_semanticHistoryController pathOfExistingFileFoundWithPrefix:@"file.txt"
+                                                                            suffix:@"(10, 10)"
+                                                                  workingDirectory:kWorkingDirectory
+                                                              charsTakenFromPrefix:&numCharsFromPrefix
+                                                              charsTakenFromSuffix:&numCharsFromSuffix
+                                                                    trimWhitespace:NO];
+    XCTAssert([@"file.txt(10, 10)" isEqualToString:path]);
+    XCTAssert(numCharsFromPrefix == [@"file.txt" length]);
+    XCTAssert(numCharsFromSuffix == [@"(10, 10)" length]);
 }
 
 - (void)testPathOfExistingFileSupportsLineNumberAndColumnNumberAndParensAndNonspaceSeparators {

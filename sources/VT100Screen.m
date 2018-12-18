@@ -108,7 +108,7 @@ static const double kInterBellQuietPeriod = 0.1;
     // line number gives a unique line number that won't be reused when the linebuffer overflows.
     long long cumulativeScrollbackOverflow_;
 
-    // When set, strings, newlines, and linefeeds are appened to printBuffer_. When ANSICSI_PRINT
+    // When set, strings, newlines, and linefeeds are appended to printBuffer_. When ANSICSI_PRINT
     // with code 4 is received, it's sent for printing.
     BOOL collectInputForPrinting_;
     NSMutableString *printBuffer_;
@@ -174,7 +174,7 @@ static NSString *const kInlineFileHeight = @"height";  // NSNumber
 static NSString *const kInlineFileHeightUnits = @"height units"; // NSNumber of VT100TerminalUnits
 static NSString *const kInlineFilePreserveAspectRatio = @"preserve aspect ratio";  // NSNumber bool
 static NSString *const kInlineFileBase64String = @"base64 string";  // NSMutableString
-static NSString *const kInilineFileInset = @"inset";  // NSValue of NSEdgeInsets
+static NSString *const kInlineFileInset = @"inset";  // NSValue of NSEdgeInsets
 
 @synthesize terminal = terminal_;
 @synthesize audibleBell = audibleBell_;
@@ -1044,7 +1044,7 @@ static NSString *const kInilineFileInset = @"inset";  // NSValue of NSEdgeInsets
         // it'll get truncated and the display is hopelessly messed up, so
         // while this is not the true start of the command it's better than not
         // recording a start, which would break alt-click to move the cursor.
-        // The user will probably cancel the command or press ^L to redrasw.
+        // The user will probably cancel the command or press ^L to redraw.
         newCommandStart = VT100GridCoordMake(commandStartX_, 0);
 
         // Abort the current command.
@@ -1152,7 +1152,7 @@ static NSString *const kInilineFileInset = @"inset";  // NSValue of NSEdgeInsets
     }
 
     // If a graphics character set was selected then translate buffer
-    // characters into graphics charaters.
+    // characters into graphics characters.
     if (charsetUsesLineDrawingMode_[[terminal_ charset]]) {
         ConvertCharsToGraphicsCharset(buffer, len);
     }
@@ -2017,6 +2017,15 @@ basedAtAbsoluteLineNumber:(long long)absoluteLineNumber
         interval = [linebuffer_ timestampForLineNumber:y width:currentGrid_.size.width];
     }
     return [NSDate dateWithTimeIntervalSinceReferenceDate:interval];
+}
+
+- (NSInteger)generationForLine:(int)y {
+    int numLinesInLineBuffer = [linebuffer_ numLinesWithWidth:currentGrid_.size.width];
+    if (y >= numLinesInLineBuffer) {
+        return [currentGrid_ generationForLine:y - numLinesInLineBuffer];
+    } else {
+        return [linebuffer_ generationForLineNumber:y width:currentGrid_.size.width];
+    }
 }
 
 - (Interval *)intervalForGridCoordRange:(VT100GridCoordRange)range
@@ -3600,6 +3609,11 @@ basedAtAbsoluteLineNumber:(long long)absoluteLineNumber
     [delegate_ screenRaise:YES];
 }
 
+- (void)terminalSetProxyIcon:(NSString *)value {
+    NSString *path = [value length] ? value : nil;
+    [delegate_ screenSetPreferredProxyIcon:path];
+}
+
 - (void)terminalClearScrollbackBuffer {
     if (![iTermAdvancedSettingsModel preventEscapeSequenceFromClearingHistory]) {
         [self clearScrollbackBuffer];
@@ -3617,6 +3631,7 @@ basedAtAbsoluteLineNumber:(long long)absoluteLineNumber
         dir = [delegate_ screenCurrentWorkingDirectory];
     }
     if (dir.length) {
+        [delegate_ screenSetPreferredProxyIcon:nil]; // Clear current proxy icon if exists.
         BOOL willChange = ![dir isEqualToString:[self workingDirectoryOnLine:cursorLine]];
         [self setWorkingDirectory:dir onLine:cursorLine];
         if (willChange) {
@@ -3693,7 +3708,7 @@ basedAtAbsoluteLineNumber:(long long)absoluteLineNumber
                           kInlineFileHeightUnits: @(heightUnits),
                           kInlineFilePreserveAspectRatio: @(preserveAspectRatio),
                           kInlineFileBase64String: [NSMutableString string],
-                          kInilineFileInset: [NSValue futureValueWithEdgeInsets:inset] } retain];
+                          kInlineFileInset: [NSValue futureValueWithEdgeInsets:inset] } retain];
 }
 
 - (void)appendImageAtCursorWithName:(NSString *)name
@@ -3871,7 +3886,7 @@ basedAtAbsoluteLineNumber:(long long)absoluteLineNumber
                                    height:[inlineFileInfo_[kInlineFileHeight] intValue]
                                     units:(VT100TerminalUnits)[inlineFileInfo_[kInlineFileHeightUnits] intValue]
                       preserveAspectRatio:[inlineFileInfo_[kInlineFilePreserveAspectRatio] boolValue]
-                                    inset:[inlineFileInfo_[kInilineFileInset] futureEdgeInsetsValue]
+                                    inset:[inlineFileInfo_[kInlineFileInset] futureEdgeInsetsValue]
                                     image:nil
                                      data:data];
         [inlineFileInfo_ release];
@@ -4101,7 +4116,7 @@ basedAtAbsoluteLineNumber:(long long)absoluteLineNumber
     _currentPromptRange.start = coord;
     _currentPromptRange.end = coord;
 
-    // FinalTerm uses this to define the start of a collapsable region. That would be a nightmare
+    // FinalTerm uses this to define the start of a collapsible region. That would be a nightmare
     // to add to iTerm, and our answer to this is marks, which already existed anyway.
     [delegate_ screenPromptDidStartAtLine:[self numberOfScrollbackLines] + self.cursorY - 1];
     if ([iTermAdvancedSettingsModel resetSGROnPrompt]) {
@@ -5285,29 +5300,29 @@ static void SwapInt(int *a, int *b) {
     NSMutableDictionary *dict = [[[temp dictionary] mutableCopy] autorelease];
     static NSString *const kScreenStateTabStopsKey = @"Tab Stops";
     dict[kScreenStateKey] =
-        @{ kScreenStateTabStopsKey: [tabStops_ allObjects] ?: @[],
-           kScreenStateTerminalKey: [terminal_ stateDictionary] ?: @{},
-           kScreenStateLineDrawingModeKey: @[ @(charsetUsesLineDrawingMode_[0]),
-                                              @(charsetUsesLineDrawingMode_[1]),
-                                              @(charsetUsesLineDrawingMode_[2]),
-                                              @(charsetUsesLineDrawingMode_[3]) ],
-           kScreenStateNonCurrentGridKey: [self contentsOfNonCurrentGrid] ?: @{},
-           kScreenStateCurrentGridIsPrimaryKey: @(primaryGrid_ == currentGrid_),
-           kScreenStateIntervalTreeKey: [intervalTree_ dictionaryValueWithOffset:intervalOffset] ?: @{},
-           kScreenStateSavedIntervalTreeKey: [savedIntervalTree_ dictionaryValueWithOffset:0] ?: [NSNull null],
-           kScreenStateCommandStartXKey: @(commandStartX_),
-           kScreenStateCommandStartYKey: @(commandStartY_),
-           kScreenStateNextCommandOutputStartKey: [NSDictionary dictionaryWithGridAbsCoord:_startOfRunningCommandOutput],
-           kScreenStateCursorVisibleKey: @(_cursorVisible),
-           kScreenStateTrackCursorLineMovementKey: @(_trackCursorLineMovement),
-           kScreenStateLastCommandOutputRangeKey: [NSDictionary dictionaryWithGridAbsCoordRange:_lastCommandOutputRange],
-           kScreenStateShellIntegrationInstalledKey: @(_shellIntegrationInstalled),
-           kScreenStateLastCommandMarkKey: _lastCommandMark.guid ?: [NSNull null],
-           kScreenStatePrimaryGridStateKey: primaryGrid_.dictionaryValue ?: @{},
-           kScreenStateAlternateGridStateKey: altGrid_.dictionaryValue ?: [NSNull null],
-           kScreenStateNumberOfLinesDroppedKey: @(linesDroppedForBrevity)
-           };
-    return [dict dictionaryByRemovingNullValues];
+        [@{ kScreenStateTabStopsKey: [tabStops_ allObjects] ?: @[],
+            kScreenStateTerminalKey: [terminal_ stateDictionary] ?: @{},
+            kScreenStateLineDrawingModeKey: @[ @(charsetUsesLineDrawingMode_[0]),
+                                               @(charsetUsesLineDrawingMode_[1]),
+                                               @(charsetUsesLineDrawingMode_[2]),
+                                               @(charsetUsesLineDrawingMode_[3]) ],
+            kScreenStateNonCurrentGridKey: [self contentsOfNonCurrentGrid] ?: @{},
+            kScreenStateCurrentGridIsPrimaryKey: @(primaryGrid_ == currentGrid_),
+            kScreenStateIntervalTreeKey: [intervalTree_ dictionaryValueWithOffset:intervalOffset] ?: @{},
+            kScreenStateSavedIntervalTreeKey: [savedIntervalTree_ dictionaryValueWithOffset:0] ?: [NSNull null],
+            kScreenStateCommandStartXKey: @(commandStartX_),
+            kScreenStateCommandStartYKey: @(commandStartY_),
+            kScreenStateNextCommandOutputStartKey: [NSDictionary dictionaryWithGridAbsCoord:_startOfRunningCommandOutput],
+            kScreenStateCursorVisibleKey: @(_cursorVisible),
+            kScreenStateTrackCursorLineMovementKey: @(_trackCursorLineMovement),
+            kScreenStateLastCommandOutputRangeKey: [NSDictionary dictionaryWithGridAbsCoordRange:_lastCommandOutputRange],
+            kScreenStateShellIntegrationInstalledKey: @(_shellIntegrationInstalled),
+            kScreenStateLastCommandMarkKey: _lastCommandMark.guid ?: [NSNull null],
+            kScreenStatePrimaryGridStateKey: primaryGrid_.dictionaryValue ?: @{},
+            kScreenStateAlternateGridStateKey: altGrid_.dictionaryValue ?: [NSNull null],
+            kScreenStateNumberOfLinesDroppedKey: @(linesDroppedForBrevity)
+            } dictionaryByRemovingNullValues];
+    return dict;
 }
 
 - (NSDictionary *)contentsOfNonCurrentGrid {

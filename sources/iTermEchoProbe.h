@@ -14,15 +14,19 @@ NS_ASSUME_NONNULL_BEGIN
 
 @protocol iTermEchoProbeDelegate<NSObject>
 
-- (void)echoProbeWriteData:(NSData *)data;
-- (void)echoProbeWriteString:(NSString *)string;
-- (void)echoProbeDidFail;
+- (void)echoProbe:(iTermEchoProbe *)echoProbe writeData:(NSData *)data;
+- (void)echoProbe:(iTermEchoProbe *)echoProbe writeString:(NSString *)string;
+- (void)echoProbeDidFail:(iTermEchoProbe *)echoProbe;
+- (void)echoProbeDidSucceed:(iTermEchoProbe *)echoProbe;
+- (BOOL)echoProbeShouldSendPassword:(iTermEchoProbe *)echoProbe;
+- (void)echoProbeDelegateWillChange:(iTermEchoProbe *)echoProbe;
 
 @end
 
 @interface iTermEchoProbe : NSObject
 
 @property (nonatomic, weak) id<iTermEchoProbeDelegate> delegate;
+@property (nonatomic, readonly) BOOL isActive;
 
 - (void)beginProbeWithBackspace:(NSData *)backspaceData
                        password:(NSString *)password;

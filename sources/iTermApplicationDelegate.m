@@ -162,9 +162,6 @@ static BOOL hasBecomeActive = NO;
     IBOutlet NSMenuItem *logStop;
     IBOutlet NSMenuItem *closeTab;
     IBOutlet NSMenuItem *closeWindow;
-    IBOutlet NSMenuItem *sendInputToAllSessions;
-    IBOutlet NSMenuItem *sendInputToAllPanes;
-    IBOutlet NSMenuItem *sendInputNormally;
     IBOutlet NSMenuItem *irPrev;
     IBOutlet NSMenuItem *windowArrangements_;
     IBOutlet NSMenuItem *windowArrangementsAsTabs_;
@@ -216,6 +213,8 @@ static BOOL hasBecomeActive = NO;
         iTermUntitledFileOpenComplete,
         iTermUntitledFileOpenDisallowed
     } _untitledFileOpenStatus;
+    
+    BOOL _disableTermination;
 }
 
 - (instancetype)init {
@@ -397,7 +396,7 @@ static BOOL hasBecomeActive = NO;
 
 #pragma mark - APIs
 
-- (BOOL)isApplescriptTestApp {
+- (BOOL)isAppleScriptTestApp {
     return [[[NSBundle mainBundle] bundleIdentifier] containsString:@"applescript"];
 }
 
@@ -531,34 +530,6 @@ static BOOL hasBecomeActive = NO;
     return [uploadsMenu_ submenu];
 }
 
-- (void)updateBroadcastMenuState {
-    BOOL sessions = NO;
-    BOOL panes = NO;
-    BOOL noBroadcast = NO;
-    PseudoTerminal *frontTerminal;
-    frontTerminal = [[iTermController sharedInstance] currentTerminal];
-    switch ([frontTerminal broadcastMode]) {
-        case BROADCAST_OFF:
-            noBroadcast = YES;
-            break;
-
-        case BROADCAST_TO_ALL_TABS:
-            sessions = YES;
-            break;
-
-        case BROADCAST_TO_ALL_PANES:
-            panes = YES;
-            break;
-
-        case BROADCAST_CUSTOM:
-            break;
-    }
-    [sendInputToAllSessions setState:sessions];
-    [sendInputToAllPanes setState:panes];
-    [sendInputNormally setState:noBroadcast];
-}
-
-
 #pragma mark - Application Delegate Overrides
 
 /**
@@ -683,10 +654,28 @@ static BOOL hasBecomeActive = NO;
                afterDelay:[iTermAdvancedSettingsModel updateScreenParamsDelay]];
 }
 
+- (void)didToggleTraditionalFullScreenMode {
+    // LOL
+    // When you have only one window, and you do windowController.window = something new
+    // then it thinks you closed the only window and asks if you want to terminate the
+    // app. We run into this problem with compact windows, as other window types are
+    // able to simply change the window style without actually replacing the window.
+    // This awful hack catches that case. It takes two spins of the runloop because
+    // everything is terrible.
+    _disableTermination = YES;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        dispatch_async(dispatch_get_main_queue(), ^{
+            _disableTermination = NO;
+        });
+    });
+}
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSNotification *)theNotification {
     DLog(@"applicationShouldTerminate:");
     NSArray *terminals;
-
+    if (_disableTermination) {
+        return NSTerminateCancel;
+    }
+    
     terminals = [[iTermController sharedInstance] terminals];
     int numSessions = 0;
 
@@ -781,7 +770,7 @@ static BOOL hasBecomeActive = NO;
 }
 
 - (BOOL)applicationOpenUntitledFile:(NSApplication *)theApplication {
-    if ([self isApplescriptTestApp]) {
+    if ([self isAppleScriptTestApp]) {
         // Don't want to do this for applescript testing so we have a blank slate.
         return NO;
     }
@@ -898,7 +887,7 @@ static BOOL hasBecomeActive = NO;
 
 - (void)application:(NSApplication *)app didDecodeRestorableState:(NSCoder *)coder {
     DLog(@"application:didDecodeRestorableState: starting");
-    if (self.isApplescriptTestApp) {
+    if (self.isAppleScriptTestApp) {
         DLog(@"Is applescript test app");
         return;
     }
@@ -919,7 +908,19 @@ static BOOL hasBecomeActive = NO;
         if (hotkeyWindowsStates) {
             // We have to create the hotkey window now because we need to attach to servers before
             // launch finishes; otherwise any running hotkey window jobs will be treated as orphans.
-            [[iTermHotKeyController sharedInstance] createHiddenWindowsFromRestorableStates:hotkeyWindowsStates];
+            const NSInteger count = [[iTermHotKeyController sharedInstance] createHiddenWindowsFromRestorableStates:hotkeyWindowsStates];
+            if (count > 0) {
+                switch (_untitledFileOpenStatus) {
+                    case iTermUntitledFileOpenUnsafe:
+                    case iTermUntitledFileOpenAllowed:
+                    case iTermUntitledFileOpenDisallowed:
+                        _untitledFileOpenStatus = iTermUntitledFileOpenDisallowed;
+                        break;
+                    case iTermUntitledFileOpenPending:
+                    case iTermUntitledFileOpenComplete:
+                        break;
+                }
+            }
         } else {
             // Restore hotkey window from pre-3.1 version.
             legacyState = [coder decodeObjectForKey:kHotkeyWindowRestorableState];
@@ -1037,7 +1038,7 @@ static BOOL hasBecomeActive = NO;
     BOOL highContrast = NO;
     BOOL minimal = NO;
 
-    switch ([iTermPreferences intForKey:kPreferenceKeyTabStyle]) {
+    switch ((iTermPreferencesTabStyle)[iTermPreferences intForKey:kPreferenceKeyTabStyle]) {
         case TAB_STYLE_DARK:
             dark = YES;
             break;
@@ -1181,7 +1182,7 @@ static BOOL hasBecomeActive = NO;
     CFPreferencesSetAppValue(CFSTR("NSQuotedKeystrokeBinding"),
                              CFSTR(""),
                              kCFPreferencesCurrentApplication);
-    // This is off by default, but would wreack havoc if set globally.
+    // This is off by default, but would wreak havoc if set globally.
     CFPreferencesSetAppValue(CFSTR("NSRepeatCountBinding"),
                              CFSTR(""),
                              kCFPreferencesCurrentApplication);
@@ -1244,7 +1245,7 @@ static BOOL hasBecomeActive = NO;
                                                object:nil];
 
     if ([iTermAdvancedSettingsModel runJobsInServers] &&
-        !self.isApplescriptTestApp) {
+        !self.isAppleScriptTestApp) {
         [PseudoTerminalRestorer setRestorationCompletionBlock:^{
             [self restoreBuriedSessionsState];
             if ([[iTermController sharedInstance] numberOfDecodesPending] == 0) {
@@ -1432,7 +1433,7 @@ static BOOL hasBecomeActive = NO;
         [iTermWarning showWarningWithTitle:@"This nightly build is over 30 days old. Consider updating soon: you may be suffering from awful bugs in blissful ignorance."
                                    actions:@[ @"I’ll Take My Chances", @"Update Now" ]
                                 identifier:@"NoSyncVeryOldNightlyBuildWarning"
-                               silenceable:kiTermWarningTypeSilencableForOneMonth
+                               silenceable:kiTermWarningTypeSilenceableForOneMonth
                                     window:nil];
         if (selection == kiTermWarningSelection1) {
             [[SUUpdater sharedUpdater] checkForUpdates:nil];
@@ -1454,7 +1455,7 @@ static BOOL hasBecomeActive = NO;
 
     // Check if we have an autolaunch script to execute. Do it only once, i.e. at application launch.
     BOOL ranAutoLaunchScripts = NO;
-    if (![self isApplescriptTestApp] &&
+    if (![self isAppleScriptTestApp] &&
         ![[NSApplication sharedApplication] isRunningUnitTests]) {
         ranAutoLaunchScripts = [self.scriptsMenuController runAutoLaunchScriptsIfNeeded];
     }
@@ -1477,7 +1478,7 @@ static BOOL hasBecomeActive = NO;
                ![iTermPreferences boolForKey:kPreferenceKeyOpenNoWindowsAtStartup] &&
                ![PseudoTerminalRestorer willOpenWindows] &&
                [[[iTermController sharedInstance] terminals] count] == 0 &&
-               ![self isApplescriptTestApp] &&
+               ![self isAppleScriptTestApp] &&
                [[[iTermHotKeyController sharedInstance] profileHotKeys] count] == 0 &&
                [[[iTermBuriedSessions sharedInstance] buriedSessions] count] == 0) {
         [self newWindow:nil];
@@ -1623,7 +1624,7 @@ static BOOL hasBecomeActive = NO;
     if (![self notifyAboutIncompatibleSoftware]) {
         NSAlert *alert = [[[NSAlert alloc] init] autorelease];
         alert.messageText = @"No Incompatible Software Detected";
-        alert.informativeText = @"No third-party software that is known to be incompatible with iTerm2’s new Applescript interfaces was found.";
+        alert.informativeText = @"No third-party software that is known to be incompatible with iTerm2’s new AppleScript interfaces was found.";
         [alert addButtonWithTitle:@"OK"];
         [alert runModal];
     }
@@ -1944,7 +1945,7 @@ static BOOL hasBecomeActive = NO;
                     DLog(@"Restore a single session");
                     term = [controller terminalWithGuid:restorableSession.terminalGuid];
                     if (term) {
-                        DLog(@"resuse an existing window");
+                        DLog(@"reuse an existing window");
                         // Reuse an existing window
                         tab = [term tabWithUniqueId:restorableSession.tabUniqueId];
                         if (tab) {
@@ -2088,7 +2089,9 @@ static BOOL hasBecomeActive = NO;
 }
 
 - (IBAction)installPythonRuntime:(id)sender {  // Explicit request from menu item
-    [[iTermPythonRuntimeDownloader sharedInstance] downloadOptionalComponentsIfNeededWithConfirmation:NO withCompletion:^(BOOL ok) {}];
+    [[iTermPythonRuntimeDownloader sharedInstance] downloadOptionalComponentsIfNeededWithConfirmation:NO
+                                                                                        pythonVersion:nil
+                                                                                       withCompletion:^(BOOL ok) {}];
 }
 
 - (IBAction)buildScriptMenu:(id)sender {
@@ -2097,14 +2100,16 @@ static BOOL hasBecomeActive = NO;
 }
 
 - (IBAction)openREPL:(id)sender {
-    [[iTermPythonRuntimeDownloader sharedInstance] downloadOptionalComponentsIfNeededWithConfirmation:YES withCompletion:^(BOOL ok) {
+    [[iTermPythonRuntimeDownloader sharedInstance] downloadOptionalComponentsIfNeededWithConfirmation:YES
+                                                                                        pythonVersion:nil
+                                                                                       withCompletion:^(BOOL ok) {
         if (!ok) {
             return;
         }
         if (![iTermAPIHelper sharedInstance]) {
             return;
         }
-        NSString *command = [[[[[iTermPythonRuntimeDownloader sharedInstance] pathToStandardPyenvPython] stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"apython"] stringWithEscapedShellCharactersIncludingNewlines:YES];
+        NSString *command = [[[[[iTermPythonRuntimeDownloader sharedInstance] pathToStandardPyenvPythonWithPythonVersion:nil] stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"apython"] stringWithEscapedShellCharactersIncludingNewlines:YES];
         NSURL *bannerURL = [[NSBundle mainBundle] URLForResource:@"repl_banner" withExtension:@"txt"];
         command = [command stringByAppendingFormat:@" --banner=\"`cat %@`\"", bannerURL.path];
         NSString *cookie = [[iTermWebSocketCookieJar sharedInstance] newCookie];
@@ -2229,6 +2234,10 @@ static BOOL hasBecomeActive = NO;
             return @"most of the window is not visible.";
         case iTermMetalUnavailableReasonContextAllocationFailure:
             return @"of a temporary failure to allocate a graphics context.";
+        case iTermMetalUnavailableReasonTabDragInProgress:
+            return @"a tab is being dragged.";
+        case iTermMetalUnavailableReasonSessionHasNoWindow:
+            return @"the current session has no window (this shouldn't happen).";
     }
 
     return @"of an internal error. Please file a bug report!";
@@ -2429,13 +2438,17 @@ static BOOL hasBecomeActive = NO;
 
 #pragma mark - iTermPasswordManagerDelegate
 
-- (void)iTermPasswordManagerEnterPassword:(NSString *)password {
+- (void)iTermPasswordManagerEnterPassword:(NSString *)password broadcast:(BOOL)broadcast {
   [[[[iTermController sharedInstance] currentTerminal] currentSession] enterPassword:password];
 }
 
 - (BOOL)iTermPasswordManagerCanEnterPassword {
   PTYSession *session = [[[iTermController sharedInstance] currentTerminal] currentSession];
   return session && ![session exited];
+}
+
+- (BOOL)iTermPasswordManagerCanBroadcast {
+    return NO;
 }
 
 - (void)currentSessionDidChange {

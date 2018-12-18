@@ -356,7 +356,7 @@ NSLog(@"Known bug: %s should be true, but %s is.", #expressionThatShouldBeTrue, 
                 break;
 
             default:
-                XCTAssert(false);  // bogus continution mark
+                XCTAssert(false);  // bogus continuation mark
         }
     }
     return screen;
@@ -2660,7 +2660,7 @@ NSLog(@"Known bug: %s should be true, but %s is.", #expressionThatShouldBeTrue, 
     XCTAssert([selection_ firstRange].coordRange.start.x == 1);
 
     screen.saveToScrollbackInAlternateScreen = NO;
-    // scrollback overflow should be 0 and selection shoudn't be insane
+    // scrollback overflow should be 0 and selection shouldn't be insane
     [self setSelectionRange:VT100GridCoordRangeMake(1, 5, 2, 5)];
     [screen terminalLineFeed];
     XCTAssert([screen scrollbackOverflow] == 0);
@@ -4106,6 +4106,45 @@ NSLog(@"Known bug: %s should be true, but %s is.", #expressionThatShouldBeTrue, 
     VT100RemoteHost *remoteHost = [screen remoteHostOnLine:2];
 
     XCTAssertEqualObjects([remoteHost hostname], @"example.com");
+}
+
+// Issue 7323
+- (void)testWrappedLinesFromIndexAtBoundary {
+    const int blockSize = 8192;
+    LineBuffer *lineBuffer = [[[LineBuffer alloc] initWithBlockSize:blockSize] autorelease];
+    const int linesPerBlock = 50;
+    const int n = 8192 / linesPerBlock;
+    screen_char_t line[n];
+    memset(line, 0, sizeof(line));
+    for (int i = 0; i < n; i++) {
+        line[i].code = 'x';
+    }
+    screen_char_t continuation;
+    memset(&continuation, 0, sizeof(continuation));
+    continuation.code = EOL_HARD;
+    const int wrapWidth = 200;
+    for (int i = 0; i < linesPerBlock * 2; i++) {
+        line[0].code = '0' + i;
+        [lineBuffer appendLine:line length:n partial:NO width:wrapWidth timestamp:0 continuation:continuation];
+    }
+    // This tests the regression.
+    NSArray *lines = [lineBuffer wrappedLinesFromIndex:linesPerBlock
+                                                 width:n*2
+                                                 count:2];
+    XCTAssertEqual(lines.count, 2);
+    
+    // This works because the old version is, as far as I can tell, written defensively rather than correctly.
+    screen_char_t buffer[wrapWidth];
+    [lineBuffer copyLineToBuffer:buffer width:wrapWidth lineNum:linesPerBlock continuation:&continuation];
+    for (int i = 0; i < linesPerBlock * 2; i++) {
+        NSArray *lines = [lineBuffer wrappedLinesFromIndex:i
+                                                     width:n*2
+                                                     count:1];
+        XCTAssertEqual(lines.count, 1);
+        ScreenCharArray *array = lines[0];
+        unichar c = array.line[0].code;
+        XCTAssertEqual(c, '0' + i);
+    }
 }
 
 #pragma mark - CSI Tests

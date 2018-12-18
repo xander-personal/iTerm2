@@ -35,8 +35,11 @@
     PSMTabBarControl *_destinationTabBar;
     NSMutableSet *_participatingTabBars;
 
-    // Support for dragging into new windows
-    PSMTabDragWindow *_dragTabWindow, *_dragViewWindow;
+    // A window that shows the tab while it's being dragged.
+    PSMTabDragWindow *_dragTabWindow;
+    
+    // A window that shows a ghost pane while a tab is being dragged out of its tab bar
+    PSMTabDragWindow *_dragViewWindow;
     NSSize _dragWindowOffset;
     NSTimer *_fadeTimer;
 
@@ -45,6 +48,7 @@
     NSMutableArray *_sineCurveWidths;
     NSPoint _currentMouseLoc;
     PSMTabBarCell *_targetCell;
+    NSSize _dragTabOffset;
 }
 
 #pragma mark -
@@ -179,6 +183,10 @@
 
     NSDraggingItem *dragItem = [[[NSDraggingItem alloc] initWithPasteboardWriter:pbItem] autorelease];
     [dragItem setDraggingFrame:draggingRect contents:imageToDrag];
+    NSPoint windowCoord = event.locationInWindow;
+    NSPoint cellOriginInWindow = [control convertPoint:cellFrame.origin toView:nil];
+    _dragTabOffset = NSMakeSize(windowCoord.x - cellOriginInWindow.x,
+                                windowCoord.y - cellOriginInWindow.y);
     ILog(@"Begin dragging session for tab bar %p", control);
     NSDraggingSession *draggingSession = [control beginDraggingSessionWithItems:@[ dragItem ]
                                                                           event:event
@@ -239,26 +247,40 @@
             unsigned int styleMask = NSWindowStyleMaskBorderless;
 
             if ([control delegate] &&
-                [[control delegate] respondsToSelector:@selector(tabView:imageForTabViewItem:offset:styleMask:)]) {
+                [[control delegate] respondsToSelector:@selector(tabView:imageForTabViewItem:styleMask:)]) {
                 // get a custom image representation of the view to drag from the delegate
                 NSImage *tabImage = [[_dragTabWindow contentView] image];
                 NSPoint drawPoint;
                 _dragWindowOffset = NSZeroSize;
                 viewImage = [[control delegate] tabView:[control tabView]
                                     imageForTabViewItem:[[self draggedCell] representedObject]
-                                                 offset:&_dragWindowOffset
                                               styleMask:&styleMask];
-
+                const NSRect draggedCellFrame = self.draggedCell.frame;
+                NSPoint drawOffset = [control convertPoint:draggedCellFrame.origin toView:nil];
+                drawOffset.y = control.window.frame.size.height - drawOffset.y;
+                const NSRect controlFrameInWindowCoords = [control convertRect:control.bounds toView:nil];
+                
+                NSSize distanceFromWindowTopLeftToControlTopLeft;
+                if ([control orientation] == PSMTabBarHorizontalOrientation) {
+                    distanceFromWindowTopLeftToControlTopLeft =
+                        NSMakeSize(controlFrameInWindowCoords.origin.x,
+                                   control.window.frame.size.height - NSMaxY(controlFrameInWindowCoords) - control.frame.size.height);
+                } else {
+                    distanceFromWindowTopLeftToControlTopLeft = NSZeroSize;
+                }
+                _dragWindowOffset = NSMakeSize(draggedCellFrame.origin.x + _dragTabOffset.width + distanceFromWindowTopLeftToControlTopLeft.width,
+                                               draggedCellFrame.origin.y - _dragTabOffset.height + distanceFromWindowTopLeftToControlTopLeft.height);
+                // _dragWindowOffset.height gives distance from top of window to mouse
                 [viewImage lockFocus];
 
                 // draw the tab into the returned window, that way we don't have two windows being
                 // dragged (this assumes the tab will be on the window)
-                drawPoint = NSMakePoint(_dragWindowOffset.width,
-                                        [viewImage size].height - _dragWindowOffset.height);
+                drawPoint = NSMakePoint(drawOffset.x,
+                                        [viewImage size].height - drawOffset.y);
 
                 if ([control orientation] == PSMTabBarHorizontalOrientation) {
                     drawPoint.y += self.height - [tabImage size].height;
-                    _dragWindowOffset.height -= self.height - [tabImage size].height;
+                    drawOffset.y -= self.height - [tabImage size].height;
                 } else {
                     drawPoint.x += [control frame].size.width - [tabImage size].width;
                 }
@@ -451,8 +473,6 @@
         }
     }
 
-    [[NSNotificationCenter defaultCenter] postNotificationName:PSMTabDragDidEndNotification object:nil];
-
     PSMTabBarControl *destination = [[[self destinationTabBar] retain] autorelease];
     PSMTabBarControl *source = [[[self sourceTabBar] retain] autorelease];
 
@@ -476,9 +496,11 @@
                            inTabBar:nil] &&
             [sourceDelegate respondsToSelector:@selector(tabView:newTabBarForDraggedTabViewItem:atPoint:)]) {
 
+            NSPoint origin = [self topLeftPointOfDragViewWindowForMouseLocation:aPoint];
+            const CGFloat height = _dragViewWindow.frame.size.height;
             PSMTabBarControl *control = [sourceDelegate tabView:[[self sourceTabBar] tabView]
                                  newTabBarForDraggedTabViewItem:[[self draggedCell] representedObject]
-                                                        atPoint:aPoint];
+                                                        atPoint:origin];
 
             if (control) {
                 if ([sourceDelegate respondsToSelector:@selector(tabView:willDropTabViewItem:inTabBar:)]) {
@@ -505,7 +527,8 @@
                 void (^fixOriginBlock)(void) = nil;
                 switch (self.sourceTabBar.tabLocation) {
                     case PSMTab_BottomTab: {
-                        NSPoint bottomLeft = control.window.frame.origin;
+                        NSPoint bottomLeft = origin;
+                        bottomLeft.y -= height;
                         fixOriginBlock = ^{
                             [control.window setFrameOrigin:bottomLeft];
                         };
@@ -580,6 +603,7 @@
         _dragViewWindow = nil;
     }
 
+    const BOOL wasDragging = self.isDragging;
     [self setIsDragging:NO];
     [self removeAllPlaceholdersFromTabBar:[self sourceTabBar]];
     [self setSourceTabBar:nil];
@@ -596,12 +620,20 @@
     self.temporarilyHiddenWindow = nil;
     [[self sourceTabBar] sanityCheck:@"finishDrag source"];
     [[self destinationTabBar] sanityCheck:@"finishDrag destination"];
+    if (wasDragging) {
+        [[NSNotificationCenter defaultCenter] postNotificationName:PSMTabDragDidEndNotification object:nil];
+    }
+}
+
+- (void)moveDragTabWindowForMouseLocation:(NSPoint)aPoint {
+    [_dragTabWindow setFrameTopLeftPoint:NSMakePoint(aPoint.x - _dragTabOffset.width,
+                                                     aPoint.y - _dragTabOffset.height)];
 }
 
 - (void)draggingBeganAt:(NSPoint)aPoint {
     ILog(@"Drag of %p began with current event %@ in window with frame %@ from\n%@", [self sourceTabBar], [NSApp currentEvent], NSStringFromRect(self.sourceTabBar.window.frame), [NSThread callStackSymbols]);
     if (_dragTabWindow) {
-        [_dragTabWindow setFrameTopLeftPoint:aPoint];
+        [self moveDragTabWindowForMouseLocation:aPoint];
 
         if ([[[self sourceTabBar] tabView] numberOfTabViewItems] == 1) {
             [self draggingExitedTabBar:[self sourceTabBar]];
@@ -610,19 +642,24 @@
     }
 }
 
+- (NSPoint)topLeftPointOfDragViewWindowForMouseLocation:(NSPoint)mouseLocation {
+    NSPoint aPoint = mouseLocation;
+    aPoint.y -= [_dragTabWindow frame].size.height;
+    aPoint.x -= _dragWindowOffset.width;
+    aPoint.y += _dragWindowOffset.height;
+    return aPoint;
+}
+
 - (void)draggingMovedTo:(NSPoint)aPoint {
     if (_dragTabWindow) {
-        [_dragTabWindow setFrameTopLeftPoint:aPoint];
+        [self moveDragTabWindowForMouseLocation:aPoint];
 
         if (_dragViewWindow) {
             //move the view representation with the tab
             //the relative position of the dragged view window will be different
             //depending on the position of the tab bar relative to the controlled tab view
 
-            aPoint.y -= [_dragTabWindow frame].size.height;
-            aPoint.x -= _dragWindowOffset.width;
-            aPoint.y += _dragWindowOffset.height;
-            [_dragViewWindow setFrameTopLeftPoint:aPoint];
+            [_dragViewWindow setFrameTopLeftPoint:[self topLeftPointOfDragViewWindowForMouseLocation:aPoint]];
         }
     }
 }

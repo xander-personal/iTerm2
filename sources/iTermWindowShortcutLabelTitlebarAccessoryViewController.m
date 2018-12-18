@@ -36,7 +36,7 @@
 - (void)updateLabel {
     [self view];  // Ensure the label exists.
     BOOL deemphasized;
-    NSString *string = [self.class stringForOrdinal:_ordinal deempahsized:&deemphasized];
+    NSString *string = [self.class stringForOrdinal:_ordinal deemphasized:&deemphasized];
     if (!deemphasized) {
         _label.stringValue = string;
     } else {
@@ -50,7 +50,7 @@
     }
 }
 
-+ (NSString *)stringForOrdinal:(int)ordinal deempahsized:(out BOOL *)deemphasized {
++ (NSString *)stringForOrdinal:(int)ordinal deemphasized:(out BOOL *)deemphasized {
     NSString *mods = [self.class modifiersString];
     if (ordinal == 0) {
         *deemphasized = NO;
@@ -93,10 +93,12 @@
 
 - (void)updateTextColor {
     if (@available(macOS 10.14, *)) {
-        if (_isMain) {
-            _label.textColor = [_label.textColor colorWithAlphaComponent:0.5];
+        NSString *closest = [_label.effectiveAppearance bestMatchFromAppearancesWithNames:@[ NSAppearanceNameDarkAqua, NSAppearanceNameAqua]];
+        _label.textColor = [NSColor windowFrameTextColor];
+        if ([closest isEqualToString:NSAppearanceNameDarkAqua]) {
+            self.view.alphaValue = 0.5;
         } else {
-            _label.textColor = [_label.textColor colorWithAlphaComponent:0.3];
+            self.view.alphaValue = 1.0;
         }
         return;
     }

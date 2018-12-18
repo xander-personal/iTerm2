@@ -79,6 +79,7 @@ extern NSString *const PTYTabVariableTitleOverride;
 
 @property (nonatomic, readonly) iTermVariableScope *variablesScope;
 @property(nonatomic, readonly) iTermMetalUnavailableReason metalUnavailableReason;
+@property(nonatomic) BOOL deferFontChanges;
 
 // Save the contents of all sessions. Used during window restoration so that if
 // the sessions are later restored from a saved arrangement during startup
@@ -219,7 +220,7 @@ extern NSString *const PTYTabVariableTitleOverride;
 
 - (NSDictionary*)arrangementWithContents:(BOOL)contents;
 
-// Update the tab's title from the active session's name. Needed for initialzing the tab's title
+// Update the tab's title from the active session's name. Needed for initializing the tab's title
 // after setting up tmux tabs.
 - (void)loadTitleFromSession;
 

@@ -2,6 +2,8 @@
 
 #import "Autocomplete.h"
 #import "FutureMethods.h"
+#import "ITAddressBookMgr.h"
+#import "iTermBroadcastInputHelper.h"
 #import "iTermController.h"
 #import "iTermInstantReplayWindowController.h"
 #import "iTermPopupWindowController.h"
@@ -35,9 +37,7 @@ extern NSString *const iTermTabDidChangePositionInWindowNotification;
 
 extern NSString *const iTermSelectedTabDidChange;
 
-extern NSString *const iTermBroadcastDomainsDidChangeNotification;
-
-// This class is 1:1 with windows. It controls the tabs, the window's fulscreen
+// This class is 1:1 with windows. It controls the tabs, the window's fullscreen
 // status, and coordinates resizing of sessions (either session-initiated
 // or window-initiated).
 @interface PseudoTerminal : NSWindowController <
@@ -86,7 +86,7 @@ extern NSString *const iTermBroadcastDomainsDidChangeNotification;
 @property(nonatomic) BOOL restorableStateDecodePending;
 
 // Used only by hotkey windows. Indicate if it should move to the active space when opening.
-@property(nonatomic, readonly) BOOL openInCurrentSpace;
+@property (nonatomic, readonly) iTermProfileSpaceSetting spaceSetting;
 
 @property(nonatomic, readonly) BOOL hasBeenKeySinceActivation;
 
@@ -94,6 +94,7 @@ extern NSString *const iTermBroadcastDomainsDidChangeNotification;
 @property(nonatomic, readonly) int number;
 @property(nonatomic, readonly) Profile *initialProfile;
 @property(nonatomic, readonly) iTermVariableScope *scope;
+@property(nonatomic, readonly) NSWindowCollectionBehavior desiredWindowCollectionBehavior;
 
 // Draws a mock-up of a window arrangement into the current graphics context.
 // |frames| gives an array of NSValue's having NSRect values for each screen,
@@ -271,9 +272,6 @@ extern NSString *const iTermBroadcastDomainsDidChangeNotification;
 - (NSDictionary *)arrangementExcludingTmuxTabs:(BOOL)excludeTmux
                              includingContents:(BOOL)includeContents;
 
-// Update a window's tmux layout, such as when fonts or scrollbar sizes change.
-- (void)refreshTmuxLayoutsAndWindow;
-
 // All tabs in this window.
 - (NSArray<PTYTab *> *)tabs;
 
@@ -315,6 +313,9 @@ extern NSString *const iTermBroadcastDomainsDidChangeNotification;
 // Turn full-screen mode on or off. Creates a new PseudoTerminal and moves this
 // one's state into it.
 - (IBAction)closeCurrentTab:(id)sender;
+- (BOOL)closeTabIfConfirmed:(PTYTab *)tab;
+- (BOOL)closeSessionWithConfirmation:(PTYSession *)aSession;
+- (void)closeSessionWithoutConfirmation:(PTYSession *)aSession;
 
 - (void)changeTabColorToMenuAction:(id)sender;
 - (void)moveSessionToWindow:(id)sender;

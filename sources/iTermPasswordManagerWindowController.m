@@ -50,6 +50,7 @@ static BOOL sAuthenticated;
     IBOutlet NSButton *_editButton;
     IBOutlet NSButton *_enterPasswordButton;
     IBOutlet iTermSearchField *_searchField;
+    IBOutlet NSButton *_broadcastButton;
     NSArray *_accounts;
     NSString *_accountNameToSelectAfterAuthentication;
 }
@@ -174,6 +175,7 @@ static BOOL sAuthenticated;
 }
 
 - (void)awakeFromNib {
+    _broadcastButton.state = NSOffState;
     [_tableView setDoubleAction:@selector(doubleClickOnTableView:)];
     [self reloadAccounts];
     [self update];
@@ -194,6 +196,7 @@ static BOOL sAuthenticated;
 #pragma mark - APIs
 
 - (void)update {
+    _broadcastButton.enabled = [self.delegate iTermPasswordManagerCanBroadcast];
     [_enterPasswordButton setEnabled:([_tableView selectedRow] >= 0 &&
                                       [_delegate iTermPasswordManagerCanEnterPassword])];
 }
@@ -295,7 +298,8 @@ static BOOL sAuthenticated;
     NSString *password = [self selectedPassword];
     if (password) {
         DLog(@"enterPassword: giving password to delegate");
-        [_delegate iTermPasswordManagerEnterPassword:password];
+        [_delegate iTermPasswordManagerEnterPassword:password
+                                           broadcast:_broadcastButton.state == NSOnState];
         DLog(@"enterPassword: closing sheet");
         [self closeOrEndSheet];
     }
@@ -424,14 +428,14 @@ static BOOL sAuthenticated;
 }
 
 - (NSString *)selectedPassword {
-    DLog(@"selectedPassowrd");
+    DLog(@"selectedPassword");
     if (!sAuthenticated) {
-        DLog(@"selectedPassowrd: return nil, not authenticated");
+        DLog(@"selectedPassword: return nil, not authenticated");
         return nil;
     }
     NSInteger index = [_tableView selectedRow];
     if (index < 0) {
-        DLog(@"selectedPassowrd: return nil, negative index");
+        DLog(@"selectedPassword: return nil, negative index");
         return nil;
     }
     NSError *error = nil;
@@ -439,7 +443,7 @@ static BOOL sAuthenticated;
                                                      account:_accounts[index]
                                                        error:&error];
     if (error) {
-        DLog(@"selectedPassowrd: return nil, keychain gave error %@", error);
+        DLog(@"selectedPassword: return nil, keychain gave error %@", error);
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
             NSAlert *alert = [[[NSAlert alloc] init] autorelease];
@@ -449,7 +453,7 @@ static BOOL sAuthenticated;
         });
         return nil;
     } else {
-        DLog(@"selectedPassowrd: return nonnil password");
+        DLog(@"selectedPassword: return nonnil password");
         return password ?: @"";
     }
 }

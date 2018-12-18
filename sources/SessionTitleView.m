@@ -170,6 +170,17 @@ static const CGFloat kButtonSize = 17;
     [super drawRect:dirtyRect];
 }
 
+- (void)setDelegate:(id<SessionTitleViewDelegate>)delegate {
+    delegate_ = delegate;
+    [self updateBackgroundColor];
+}
+
+- (void)updateBackgroundColor {
+    label_.backgroundColor = [self.delegate sessionTitleViewBackgroundColor];
+    label_.drawsBackground = YES;
+    [self setNeedsDisplay:YES];
+}
+
 - (void)setTitle:(NSString *)title {
     if ([title isEqualToString:title_]) {
         return;
@@ -230,7 +241,7 @@ static const CGFloat kButtonSize = 17;
     CGFloat whiteLevel = 0;
     iTermPreferencesTabStyle preferredStyle = [iTermPreferences intForKey:kPreferenceKeyTabStyle];
     if (self.window.ptyWindow.it_terminalWindowUseMinimalStyle) {
-        label_.textColor = self.window.ptyWindow.it_terminalWindowDecorationTextColor;
+        label_.textColor = [self.window.ptyWindow it_terminalWindowDecorationTextColorForBackgroundColor:[delegate_ sessionTitleViewBackgroundColor]];
         [self setNeedsDisplay:YES];
         return;
     }

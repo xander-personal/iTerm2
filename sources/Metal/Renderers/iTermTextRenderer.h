@@ -7,12 +7,14 @@ NS_ASSUME_NONNULL_BEGIN
 
 NS_CLASS_AVAILABLE(10_11, NA)
 @interface iTermTextRenderer : NSObject<iTermMetalCellRenderer>
+@property (nonatomic, readonly) CGSize asciiOffset;
 
 - (instancetype)initWithDevice:(id<MTLDevice>)device NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
 
 - (void)setASCIICellSize:(CGSize)cellSize
-               glyphSize:(CGSize)glyphSize
+                  offset:(CGSize)offset
+              descriptor:(iTermCharacterSourceDescriptor *)descriptor
       creationIdentifier:(id)creationIdentifier
                 creation:(NSDictionary<NSNumber *, iTermCharacterBitmap *> *(^)(char, iTermASCIITextureAttributes))creation;
 

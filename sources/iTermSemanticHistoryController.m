@@ -28,6 +28,7 @@
 #import "iTermAdvancedSettingsModel.h"
 #import "iTermLaunchServices.h"
 #import "iTermSemanticHistoryPrefsController.h"
+#import "NSArray+iTerm.h"
 #import "NSFileManager+iTerm.h"
 #import "NSStringITerm.h"
 #import "NSURL+iTerm.h"
@@ -109,38 +110,54 @@ NSString *const kSemanticHistoryWorkingDirectorySubstitutionKey = @"semanticHist
         return nil;
     }
 
-    if (lineNumber != nil) {
+    // If it's in any form of bracketed delimiters, strip them
+    path = [path stringByRemovingEnclosingBrackets];
+
+    BOOL stripTrailingParen = YES;
+    {
         NSString *value = [path stringByMatching:@":(\\d+)" capture:1];
         if (!value) {
-            value = [path stringByMatching:@"\\[(\\d+), \\d+]" capture:1];
+            value = [path stringByMatching:@"\\[(\\d+), ?\\d+]" capture:1];
         }
         if (!value) {
             value = [suffix stringByMatching:@"\", line (\\d+), column (\\d+)" capture:1];
         }
-        *lineNumber = value;
+        if (!value) {
+            value = [path stringByMatching:@"\\((\\d+), ?\\d+\\)" capture:1];
+            if (value) {
+                stripTrailingParen = NO;
+            }
+        }
+        if (lineNumber != nil) {
+            *lineNumber = value;
+        }
     }
     if (columnNumber != nil) {
         NSString *value = [path stringByMatching:@":(\\d+):(\\d+)" capture:2];
         if (!value) {
-            value = [path stringByMatching:@"\\[(\\d+), (\\d+)]" capture:2];
+            value = [path stringByMatching:@"\\[(\\d+), ?(\\d+)]" capture:2];
         }
         if (!value) {
             value = [suffix stringByMatching:@"\", line (\\d+), column (\\d+)" capture:2];
         }
+        if (!value) {
+            value = [path stringByMatching:@"\\((\\d+), ?(\\d+)\\)" capture:2];
+        }
         *columnNumber = value;
     }
 
-    // If it's in any form of bracketed delimiters, strip them
-    path = [path stringByRemovingEnclosingBrackets];
-
     // strip various trailing characters that are unlikely to be part of the file name.
-    path = [path stringByReplacingOccurrencesOfRegex:@"[.),:]$"
+    NSString *regex = stripTrailingParen ? @"[.),:]$" : @"[.,:]$";
+    path = [path stringByReplacingOccurrencesOfRegex:regex
                                           withString:@""];
     DLog(@" Strip trailing chars, leaving %@", path);
 
     NSString *pathExLineNumberAndColumn = nil;
-    if ([path stringByMatching:@"\\[(\\d+), (\\d+)]"]) {
-        pathExLineNumberAndColumn = [path stringByReplacingOccurrencesOfRegex:@"\\[\\d+, \\d+](?::.*)?$"
+    if ([path stringByMatching:@"\\[(\\d+), ?(\\d+)]"]) {
+        pathExLineNumberAndColumn = [path stringByReplacingOccurrencesOfRegex:@"\\[\\d+, ?\\d+](?::.*)?$"
+                                                                   withString:@""];
+    } else if ([path stringByMatching:@"\\((\\d+), ?(\\d+)\\)"]) {
+        pathExLineNumberAndColumn = [path stringByReplacingOccurrencesOfRegex:@"\\(\\d+, ?\\d+\\)(?::.*)?$"
                                                                    withString:@""];
     } else {
         pathExLineNumberAndColumn = [path stringByReplacingOccurrencesOfRegex:@":\\d*(?::.*)?$"
@@ -253,7 +270,7 @@ NSString *const kSemanticHistoryWorkingDirectorySubstitutionKey = @"semanticHist
         } else {
             // This isn't as good as opening "code -g" because it always opens a new instance
             // of the app but it's the OS-sanctioned way of running VSCode.  We can't
-            // use Applescript because it won't open the file to a particular line number.
+            // use AppleScript because it won't open the file to a particular line number.
             [self launchAppWithBundleIdentifier:kVSCodeIdentifier path:path];
         }
     }
@@ -283,7 +300,7 @@ NSString *const kSemanticHistoryWorkingDirectorySubstitutionKey = @"semanticHist
         } else {
             // This isn't as good as opening "subl" because it always opens a new instance
             // of the app but it's the OS-sanctioned way of running Sublimetext.  We can't
-            // use Applescript because it won't open the file to a particular line number.
+            // use AppleScript because it won't open the file to a particular line number.
             [self launchAppWithBundleIdentifier:bundleId path:path];
         }
     }
@@ -341,12 +358,14 @@ NSString *const kSemanticHistoryWorkingDirectorySubstitutionKey = @"semanticHist
             [self launchSublimeTextWithBundleIdentifier:bundleId path:path];
         } else if ([identifier isEqualToString:kEmacsAppIdentifier]) {
             NSMutableArray *args = [NSMutableArray array];
-            [args addObject:path];
-            if (lineNumber) {
-                if (columnNumber) {
-                    [args insertObject:[NSString stringWithFormat:@"+%@:%@", lineNumber, columnNumber] atIndex:0];
-                } else {
-                    [args insertObject:[NSString stringWithFormat:@"+%@", lineNumber] atIndex:0];
+            if (path) {
+                [args addObject:path];
+                if (lineNumber) {
+                    if (columnNumber) {
+                        [args insertObject:[NSString stringWithFormat:@"+%@:%@", lineNumber, columnNumber] atIndex:0];
+                    } else {
+                        [args insertObject:[NSString stringWithFormat:@"+%@", lineNumber] atIndex:0];
+                    }
                 }
             }
             [self launchEmacsWithArguments:args];
@@ -459,7 +478,7 @@ NSString *const kSemanticHistoryWorkingDirectorySubstitutionKey = @"semanticHist
     }
 
     if ([prefs_[kSemanticHistoryActionKey] isEqualToString:kSemanticHistoryCoprocessAction]) {
-        DLog(@"Launch coproress with script %@", script);
+        DLog(@"Launch coprocess with script %@", script);
         assert(delegate_);
         [delegate_ semanticHistoryLaunchCoprocessWithCommand:script];
         return YES;
@@ -533,6 +552,29 @@ NSString *const kSemanticHistoryWorkingDirectorySubstitutionKey = @"semanticHist
     return [iTermSemanticHistoryPrefsController bundleIdIsEditor:[self bundleIdForDefaultAppForFile:file]];
 }
 
+- (NSArray<NSString *> *)splitString:(NSString *)string {
+    NSMutableArray<NSString *> *parts = [NSMutableArray array];
+    __block NSRange lastRange = NSMakeRange(0, 0);
+    [string enumerateStringsMatchedByRegex:@"([^\t ()]*)([\t ()])"
+                                   options:0
+                                   inRange:NSMakeRange(0, string.length)
+                                     error:nil
+                        enumerationOptions:0
+                                usingBlock:^(NSInteger captureCount,
+                                             NSString *const *capturedStrings,
+                                             const NSRange *capturedRanges,
+                                             volatile BOOL *const stop) {
+                                    [parts addObject:capturedStrings[1]];
+                                    [parts addObject:capturedStrings[2]];
+                                    lastRange = capturedRanges[2];
+                                }];
+    const NSInteger suffixStartIndex = NSMaxRange(lastRange);
+    if (suffixStartIndex < string.length) {
+        [parts addObject:[string substringFromIndex:suffixStartIndex]];
+    }
+    return parts;
+}
+
 - (NSString *)pathOfExistingFileFoundWithPrefix:(NSString *)beforeStringIn
                                          suffix:(NSString *)afterStringIn
                                workingDirectory:(NSString *)workingDirectory
@@ -548,14 +590,9 @@ NSString *const kSemanticHistoryWorkingDirectorySubstitutionKey = @"semanticHist
     DLog(@"Brute force path from prefix <<%@>>, suffix <<%@>> directory=%@",
          beforeStringIn, afterStringIn, workingDirectory);
 
-    // The parens here cause "Foo bar" to become {"Foo", " ", "bar"} rather than {"Foo", "bar"}.
-    // Also, there is some kind of weird bug in regexkit. If you do [[beforeChunks mutableCopy] autorelease]
-    // then the items in the array get over-released.
-    NSString *const kSplitRegex = @"([\t ()])";
-    NSArray *beforeChunks = [beforeStringIn componentsSeparatedByRegex:kSplitRegex];
-    NSArray *afterChunks = [afterStringIn componentsSeparatedByRegex:kSplitRegex];
-    DLog(@"before chunks=%@", beforeChunks);
-    DLog(@"after chunks=%@", afterChunks);
+    // Split "Foo Bar" to ["Foo", " ", "Bar"]
+    NSArray *beforeChunks = [self splitString:beforeStringIn];
+    NSArray *afterChunks = [self splitString:afterStringIn];
 
     NSMutableString *left = [NSMutableString string];
     int iterationsBeforeQuitting = 100;  // Bail after 100 iterations if nothing is still found.
@@ -609,6 +646,13 @@ NSString *const kSemanticHistoryWorkingDirectorySubstitutionKey = @"semanticHist
                                              columnNumber:nil] != nil);
                 }
                 if (exists) {
+                    NSString *extra = @"";
+                    if (j + 1 < afterChunks.count) {
+                        extra = [self columnAndLineNumberFromChunks:[afterChunks subarrayFromIndex:j + 1]];
+                    }
+                    NSString *extendedPath = [modifiedPossiblePath stringByAppendingString:extra];
+                    [right appendString:extra];
+                    
                     if (charsTakenFromPrefixPtr) {
                         if (trimWhitespace &&
                             [[right stringByTrimmingTrailingCharactersFromCharacterSet:whitespaceCharset] length] == 0) {
@@ -621,7 +665,7 @@ NSString *const kSemanticHistoryWorkingDirectorySubstitutionKey = @"semanticHist
                         }
                     }
                     if (suffixChars) {
-                        NSInteger lengthOfBadSuffix = trimmedPath.length - modifiedPossiblePath.length;
+                        NSInteger lengthOfBadSuffix = extra.length ? 0 : trimmedPath.length - modifiedPossiblePath.length;
                         int n;
                         if (trimWhitespace) {
                             n = [[right stringByTrimmingTrailingCharactersFromCharacterSet:whitespaceCharset] length] - lengthOfBadSuffix;
@@ -630,8 +674,8 @@ NSString *const kSemanticHistoryWorkingDirectorySubstitutionKey = @"semanticHist
                         }
                         *suffixChars = MAX(0, n);
                     }
-                    DLog(@"Using path %@", modifiedPossiblePath);
-                    return modifiedPossiblePath;
+                    DLog(@"Using path %@", extendedPath);
+                    return extendedPath;
                 }
             }
             if (--iterationsBeforeQuitting == 0) {
@@ -640,6 +684,21 @@ NSString *const kSemanticHistoryWorkingDirectorySubstitutionKey = @"semanticHist
         }
     }
     return nil;
+}
+
+- (NSString *)columnAndLineNumberFromChunks:(NSArray<NSString *> *)afterChunks {
+    NSString *suffix = [afterChunks componentsJoinedByString:@""];
+    NSArray<NSString *> *regexes = @[ @"^(:\\d+)",
+                                      @"^(\\[\\d+, ?\\d+])",
+                                      @"^(\", line \\d+, column \\d+)",
+                                      @"^(\\(\\d+, ?\\d+\\))"];
+    for (NSString *regex in regexes) {
+        NSString *value = [suffix stringByMatching:regex capture:1];
+        if (value) {
+            return value;
+        }
+    }
+    return @"";
 }
 
 - (NSArray *)pathsFromPath:(NSString *)source byRemovingBadSuffixes:(NSArray *)badSuffixes {

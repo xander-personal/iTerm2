@@ -284,7 +284,7 @@ NS_INLINE vector_int3 GetColorModelIndexForPIU(iTermTextRendererTransientState *
         for (auto i : *_colorModelIndexes) {
             const iTermColorComponentPair p = i.first;
             [[iTermSubpixelModelBuilder sharedInstance] writeDebugDataToFolder:folder.path
-                                                                foregoundColor:p.first / 255.0
+                                                               foregroundColor:p.first / 255.0
                                                                backgroundColor:p.second / 255.0];
         }
     }
@@ -559,19 +559,19 @@ static inline int iTermOuterPIUIndex(const bool &annotation, const bool &underli
     iTermTextPIU *piu;
     if (iTermTextIsMonochrome()) {
         // There is only a center part for ASCII on Mojave because the glyph size is increased to contain the largest ASCII glyph.
-        piu = iTermTextRendererTransientStateAddASCIIPart(_asciiPIUArrays[outerPIUIndex][asciiAttrs].get_next(),
-                                                          code,
-                                                          w,
-                                                          h,
-                                                          texture,
-                                                          cellWidth,
-                                                          x,
-                                                          yOffset,
-                                                          iTermASCIITextureOffsetCenter,
-                                                          textColor,
-                                                          attributes[x].backgroundColor,
-                                                          underlineStyle,
-                                                          underlineColor);
+        iTermTextRendererTransientStateAddASCIIPart(_asciiPIUArrays[outerPIUIndex][asciiAttrs].get_next(),
+                                                    code,
+                                                    w,
+                                                    h,
+                                                    texture,
+                                                    cellWidth,
+                                                    x,
+                                                    yOffset,
+                                                    iTermASCIITextureOffsetCenter,
+                                                    textColor,
+                                                    attributes[x].backgroundColor,
+                                                    underlineStyle,
+                                                    underlineColor);
         return;
     }
     // Pre-10.14, ASCII glyphs can get chopped up into multiple parts. This is necessary so subpixel AA will work right.
@@ -698,6 +698,7 @@ static inline BOOL GlyphKeyCanTakeASCIIFastPath(const iTermMetalGlyphKey &glyphK
     const float cellWidth = self.cellConfiguration.cellSize.width;
     const float verticalShift = round((cellHeight - self.cellConfiguration.cellSizeWithoutSpacing.height) / (2 * self.configuration.scale)) * self.configuration.scale;
     const float yOffset = (self.cellConfiguration.gridSize.height - row - 1) * cellHeight + verticalShift;
+    const float asciiYOffset = -self.asciiOffset.height;
 
     std::map<int, int> lastRelations;
     BOOL inMarkedRange = NO;
@@ -718,7 +719,7 @@ static inline BOOL GlyphKeyCanTakeASCIIFastPath(const iTermMetalGlyphKey &glyphK
                                                                                                      glyphKeys[x].thinStrokes);
             [self addASCIICellToPIUsForCode:glyphKeys[x].code
                                           x:x
-                                    yOffset:yOffset
+                                    yOffset:yOffset + asciiYOffset
                                           w:reciprocalAsciiAtlasSize.x
                                           h:reciprocalAsciiAtlasSize.y
                                   cellWidth:cellWidth
@@ -841,8 +842,8 @@ static vector_int3 SlowGetColorModelIndexForPIU(iTermTextRendererTransientState 
 
 - (int)allocateColorModelForColorPair:(iTermColorComponentPair)colorPair {
     int i = _colorModelIndexes->size();
-    iTermSubpixelModel *model = [[iTermSubpixelModelBuilder sharedInstance] modelForForegoundColor:colorPair.first / 255.0
-                                                                                   backgroundColor:colorPair.second / 255.0];
+    iTermSubpixelModel *model = [[iTermSubpixelModelBuilder sharedInstance] modelForForegroundColor:colorPair.first / 255.0
+                                                                                    backgroundColor:colorPair.second / 255.0];
     [_colorModels appendData:model.table];
     (*_colorModelIndexes)[colorPair] = i;
     return i;

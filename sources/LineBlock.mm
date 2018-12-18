@@ -32,6 +32,8 @@ NSString *const kLineBlockIsPartialKey = @"Is Partial";
 NSString *const kLineBlockMetadataKey = @"Metadata";
 NSString *const kLineBlockMayHaveDWCKey = @"May Have Double Width Character";
 
+static NSInteger LineBlockNextGeneration = -1;
+
 void EnableDoubleWidthCharacterLineCache() {
     gEnableDoubleWidthCharacterLineCache = YES;
 }
@@ -168,6 +170,7 @@ NS_INLINE void iTermLineBlockDidChange(__unsafe_unretained LineBlock *lineBlock)
             metadata_[i].continuation.backgroundColorMode = [components[j++] unsignedCharValue];
             metadata_[i].timestamp = [components[j++] doubleValue];
             metadata_[i].number_of_wrapped_lines = 0;
+            metadata_[i].generation = LineBlockNextGeneration--;
             if (gEnableDoubleWidthCharacterLineCache) {
                 metadata_[i].double_width_characters = nil;
             }
@@ -256,6 +259,7 @@ NS_INLINE void iTermLineBlockDidChange(__unsafe_unretained LineBlock *lineBlock)
     metadata_[cll_entries].timestamp = timestamp;
     metadata_[cll_entries].continuation = continuation;
     metadata_[cll_entries].number_of_wrapped_lines = 0;
+    metadata_[cll_entries].generation = LineBlockNextGeneration--;
 
     ++cll_entries;
 }
@@ -432,6 +436,7 @@ extern "C" int iTermLineBlockNumberOfFullLinesImpl(screen_char_t *buffer,
         metadata_[cll_entries - 1].timestamp = timestamp;
         metadata_[cll_entries - 1].continuation = continuation;
         metadata_[cll_entries - 1].number_of_wrapped_lines = 0;
+        metadata_[cll_entries - 1].generation = LineBlockNextGeneration--;
         if (gEnableDoubleWidthCharacterLineCache) {
             // TODO: Would be nice to add on to the index set instead of deleting it.
             [metadata_[cll_entries - 1].double_width_characters release];
@@ -598,6 +603,28 @@ int OffsetOfWrappedLine(screen_char_t* p, int n, int length, int width, BOOL may
     return 0;
 }
 
+- (NSInteger)generationForLineNumber:(int)lineNum width:(int)width {
+    int prev = 0;
+    int length;
+    int i;
+    for (i = first_entry; i < cll_entries; ++i) {
+        int cll = cumulative_line_lengths[i] - start_offset;
+        length = cll - prev;
+        const int spans = [self numberOfFullLinesFromOffset:(buffer_start - raw_buffer) + prev
+                                                     length:length
+                                                      width:width];
+        if (lineNum > spans) {
+            // Consume the entire raw line and keep looking for more.
+            int consume = spans + 1;
+            lineNum -= consume;
+        } else {  // *lineNum <= spans
+            return metadata_[i].generation;
+        }
+        prev = cll;
+    }
+    return 0;
+}
+
 - (screen_char_t*)getWrappedLineWithWrapWidth:(int)width
                                       lineNum:(int*)lineNum
                                    lineLength:(int*)lineLength
@@ -656,7 +683,7 @@ int OffsetOfWrappedLine(screen_char_t* p, int n, int length, int width, BOOL may
             *lineNum -= consume;
             ITBetaAssert(*lineNum >= 0, @"Negative lines after consuming spans");
         } else {  // *lineNum <= spans
-            // We found the raw line that inclues the wrapped line we're searching for.
+            // We found the raw line that includes the wrapped line we're searching for.
             // eat up *lineNum many width-sized wrapped lines from this start of the current full line
             int offset;
             if (gEnableDoubleWidthCharacterLineCache) {
@@ -905,7 +932,7 @@ int OffsetOfWrappedLine(screen_char_t* p, int n, int length, int width, BOOL may
             int consume = spans + 1;
             n -= consume;
         } else {  // n <= spans
-            // We found the raw line that inclues the wrapped line we're searching for.
+            // We found the raw line that includes the wrapped line we're searching for.
             // Set offset to the offset into the raw line where the nth wrapped
             // line begins.
             int offset = OffsetOfWrappedLine(buffer_start + prev,
@@ -1206,7 +1233,7 @@ static int Search(NSString* needle,
         // accept is one whose leftmost position is at the leftmost position of
         // the previous result.
         //
-        // Example: Consider a previosu search of [jump]
+        // Example: Consider a previous search of [jump]
         //  The quick brown fox jumps over the lazy dog.
         //                      ^^^^
         // The search is then extended to [jumps]. We want to return:

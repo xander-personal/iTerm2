@@ -185,6 +185,14 @@ NSString *const iTermAPIServerConnectionClosed = @"iTermAPIServerConnectionClose
     });
 }
 
+- (NSString *)websocketKeyForConnectionKey:(NSString *)connectionKey {
+    __block NSString *result = nil;
+    dispatch_sync(_queue, ^{
+        result = self->_connections[connectionKey].key;
+    });
+    return result;
+
+}
 - (void)didAcceptConnectionOnFileDescriptor:(int)fd fromAddress:(iTermSocketAddress *)address {
     DLog(@"Accepted connection");
     dispatch_queue_t queue = _queue;
@@ -854,6 +862,19 @@ NSString *const iTermAPIServerConnectionClosed = @"iTermAPIServerConnectionClose
     }];
 }
 
+- (void)handleCloseRequest:(ITMClientOriginatedMessage *)request connection:(iTermWebSocketConnection *)webSocketConnection {
+    ITMServerOriginatedMessage *response = [self newResponseForRequest:request];
+
+    __block BOOL handled = NO;
+    __weak __typeof(self) weakSelf = self;
+    [_delegate apiServerCloseRequest:request.closeRequest handler:^(ITMCloseResponse *theResponse) {
+        assert(!handled);
+        handled = YES;
+        response.closeResponse = theResponse;
+        [weakSelf finishHandlingRequestWithResponse:response onConnection:webSocketConnection];
+    }];
+}
+
 
 // Runs on main queue, either in or not in a transaction.
 - (void)dispatchRequest:(ITMClientOriginatedMessage *)request connection:(iTermWebSocketConnection *)webSocketConnection {
@@ -995,6 +1016,10 @@ NSString *const iTermAPIServerConnectionClosed = @"iTermAPIServerConnectionClose
 
         case ITMClientOriginatedMessage_Submessage_OneOfCase_SetBroadcastDomainsRequest:
             [self handleSetBroadcastDomainsRequest:request connection:webSocketConnection];
+            break;
+
+        case ITMClientOriginatedMessage_Submessage_OneOfCase_CloseRequest:
+            [self handleCloseRequest:request connection:webSocketConnection];
             break;
     }
 }

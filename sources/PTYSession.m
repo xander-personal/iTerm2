@@ -20,7 +20,7 @@
 #import "iTermCharacterSource.h"
 #import "iTermColorMap.h"
 #import "iTermColorPresets.h"
-#import "iTermCommandHistoryCommandUseMO+Addtions.h"
+#import "iTermCommandHistoryCommandUseMO+Additions.h"
 #import "iTermController.h"
 #import "iTermCopyModeState.h"
 #import "iTermDisclosableView.h"
@@ -225,7 +225,7 @@ static NSMutableDictionary *gRegisteredSessionContents;
 static NSTimeInterval kMinimumPartialLineTriggerCheckInterval = 0.5;
 
 // Grace period to avoid failing to write anti-idle code when timer runs just before when the code
-// shuold be sent.
+// should be sent.
 static const NSTimeInterval kAntiIdleGracePeriod = 0.1;
 
 // Limit for number of entries in self.directories, self.commands, self.hosts.
@@ -238,7 +238,6 @@ static const NSUInteger kMaxHosts = 100;
     iTermAutomaticProfileSwitcherDelegate,
     iTermBackgroundDrawingHelperDelegate,
     iTermCoprocessDelegate,
-    iTermEchoProbeDelegate,
     iTermHotKeyNavigableSession,
     iTermMetaFrustrationDetector,
     iTermMetalGlueDelegate,
@@ -375,7 +374,7 @@ static const NSUInteger kMaxHosts = 100;
     // In order to correctly draw a tiled background image, we must first draw
     // it into an image the size of the session view, and then blit from it
     // onto the background of whichever view needs a background. This ensures
-    // the tesselation is consistent.
+    // the tessellation is consistent.
     NSImage *_patternedImage;
 
     // Mouse reporting state
@@ -434,7 +433,7 @@ static const NSUInteger kMaxHosts = 100;
     NSString *_missingSavedArrangementProfileGUID;
 
     // The containing window is in the midst of a live resize. The update timer
-    // runs in the common modes runlooup in this case. That's not acceptable
+    // runs in the common modes runloop in this case. That's not acceptable
     // for normal use for reasons that Apple leaves up to your imagination (it
     // doesn't fire while you hold down a key, for example), but it does fire
     // during live resize (unlike the default runloops).
@@ -443,6 +442,7 @@ static const NSUInteger kMaxHosts = 100;
     VT100RemoteHost *_currentHost;
 
     NSMutableDictionary<id, ITMNotificationRequest *> *_keystrokeSubscriptions;
+    NSMutableDictionary<id, ITMNotificationRequest *> *_keyboardFilterSubscriptions;
     NSMutableDictionary<id, ITMNotificationRequest *> *_updateSubscriptions;
     NSMutableDictionary<id, ITMNotificationRequest *> *_promptSubscriptions;
     NSMutableDictionary<id, ITMNotificationRequest *> *_locationChangeSubscriptions;
@@ -475,7 +475,6 @@ static const NSUInteger kMaxHosts = 100;
     iTermVariables *_userVariables;
     iTermSwiftyString *_badgeSwiftyString;
     iTermSwiftyString *_autoNameSwiftyString;
-    iTermEchoProbe *_echoProbe;
     
     iTermBackgroundDrawingHelper *_backgroundDrawingHelper;
     iTermMetaFrustrationDetector *_metaFrustrationDetector;
@@ -612,6 +611,7 @@ static const NSUInteger kMaxHosts = 100;
         _cadenceController.delegate = self;
 
         _keystrokeSubscriptions = [[NSMutableDictionary alloc] init];
+        _keyboardFilterSubscriptions = [[NSMutableDictionary alloc] init];
         _updateSubscriptions = [[NSMutableDictionary alloc] init];
         _promptSubscriptions = [[NSMutableDictionary alloc] init];
         _locationChangeSubscriptions = [[NSMutableDictionary alloc] init];
@@ -761,6 +761,7 @@ ITERM_WEAKLY_REFERENCEABLE
     [_currentHost release];
 
     [_keystrokeSubscriptions release];
+    [_keyboardFilterSubscriptions release];
     [_updateSubscriptions release];
     [_promptSubscriptions release];
     [_locationChangeSubscriptions release];
@@ -999,10 +1000,10 @@ ITERM_WEAKLY_REFERENCEABLE
     if (![iTermAdvancedSettingsModel noSyncSuppressMissingProfileInArrangementWarning]) {
         NSString *notice;
         NSArray<NSString *> *actions = @[ @"Don't Warn Again" ];
-        NSString *savedArranagementName = [[iTermController sharedInstance] savedArrangementNameBeingRestored];
+        NSString *savedArrangementName = [[iTermController sharedInstance] savedArrangementNameBeingRestored];
         if ([[ProfileModel sharedInstance] bookmarkWithName:missingProfileName]) {
             notice = [NSString stringWithFormat:@"This session's profile, “%@”, no longer exists. A profile with that name happens to exist.", missingProfileName];
-            if (savedArranagementName) {
+            if (savedArrangementName) {
                 actions = [actions arrayByAddingObject:@"Repair Saved Arrangement"];
             }
         } else {
@@ -1021,7 +1022,7 @@ ITERM_WEAKLY_REFERENCEABLE
                                                             } else if (selection == 1) {
                                                                 // Repair
                                                                 Profile *similarlyNamedProfile = [[ProfileModel sharedInstance] bookmarkWithName:missingProfileName];
-                                                                [[iTermController sharedInstance] repairSavedArrangementNamed:savedArranagementName
+                                                                [[iTermController sharedInstance] repairSavedArrangementNamed:savedArrangementName
                                                                                                          replacingMissingGUID:thisProfile[KEY_GUID]
                                                                                                                      withGUID:similarlyNamedProfile[KEY_GUID]];
                                                                 [[NSNotificationCenter defaultCenter] postNotificationName:PTYSessionDidRepairSavedArrangement
@@ -1247,7 +1248,7 @@ ITERM_WEAKLY_REFERENCEABLE
         }
     }
     if (needDivorce) {
-        // Keep it from stepping on an existing sesion with the same guid. Assign a fresh GUID.
+        // Keep it from stepping on an existing session with the same guid. Assign a fresh GUID.
         // Set the ORIGINAL_GUID to an existing guid from which this profile originated if possible.
         NSString *originalGuid = nil;
         NSString *recordedGuid = arrangement[SESSION_ARRANGEMENT_BOOKMARK][KEY_GUID];
@@ -1714,7 +1715,7 @@ ITERM_WEAKLY_REFERENCEABLE
 
         case PROMPT_EX_JOBS: {
             if (self.isTmuxClient) {
-                return [iTermPromptOnCloseReason tmuxClientsAlwaysPromptBecaseJobsAreNotExposed];
+                return [iTermPromptOnCloseReason tmuxClientsAlwaysPromptBecauseJobsAreNotExposed];
             }
             NSMutableArray<NSString *> *blockingJobs = [NSMutableArray array];
             NSArray *jobsThatDontRequirePrompting = [_profile objectForKey:KEY_JOBS];
@@ -1779,7 +1780,8 @@ ITERM_WEAKLY_REFERENCEABLE
                                                        iTermVariableKeySessionName];
         BOOL hasCycle = [self checkForCycleInSwiftyString:temp paths:pathsPossiblyComputedFromAutoName];
         if (!hasCycle) {
-            hasCycle = [self doesSwiftyString:_badgeSwiftyString referencePaths:pathsPossiblyComputedFromAutoName];
+            hasCycle = ([self doesSwiftyString:_badgeSwiftyString referencePaths:pathsPossiblyComputedFromAutoName] &&
+                        [self doesSwiftyString:temp referencePaths:@[ iTermVariableKeySessionBadge ]]);
         }
         if (hasCycle) {
             [temp release];
@@ -2018,7 +2020,7 @@ ITERM_WEAKLY_REFERENCEABLE
 
 - (void)_maybeWarnAboutShortLivedSessions
 {
-    if ([iTermApplication.sharedApplication delegate].isApplescriptTestApp) {
+    if ([iTermApplication.sharedApplication delegate].isAppleScriptTestApp) {
         // The applescript test driver doesn't care about short-lived sessions.
         return;
     }
@@ -2242,7 +2244,7 @@ ITERM_WEAKLY_REFERENCEABLE
 }
 
 // This does not handle tmux properly. Any writing to tmux should happen in a
-// caller. It does handle braodcasting to other sessions.
+// caller. It does handle broadcasting to other sessions.
 - (void)writeTaskImpl:(NSString *)string
              encoding:(NSStringEncoding)optionalEncoding
         forceEncoding:(BOOL)forceEncoding
@@ -2253,6 +2255,11 @@ ITERM_WEAKLY_REFERENCEABLE
         DLog(@"writeTaskImpl session=%@ encoding=%@ forceEncoding=%@ canBroadcast=%@: called from %@",
              self, @(encoding), @(forceEncoding), @(canBroadcast), stack);
         DLog(@"writeTaskImpl string=%@", string);
+    }
+    if (string.length == 0) {
+        DLog(@"String length is 0");
+        // Abort early so the surrogate hack works.
+        return;
     }
     if (canBroadcast && _terminal.sendReceiveMode && !self.isTmuxClient && !self.isTmuxGateway) {
         // Local echo. Only for broadcastable text to avoid printing passwords from the password manager.
@@ -2274,7 +2281,7 @@ ITERM_WEAKLY_REFERENCEABLE
             PTYScroller *verticalScroller = [_view.scrollview ptyVerticalScroller];
             [verticalScroller setUserScroll:NO];
         }
-        NSData *data = [string dataUsingEncoding:encoding allowLossyConversion:YES];
+        NSData *data = [self dataForInputString:string usingEncoding:encoding];
         const char *bytes = data.bytes;
         for (NSUInteger i = 0; i < data.length; i++) {
             DLog(@"Write byte 0x%02x (%c)", (((int)bytes[i]) & 0xff), bytes[i]);
@@ -2283,6 +2290,35 @@ ITERM_WEAKLY_REFERENCEABLE
     }
 }
 
+// Convert the string to the requested encoding. If the string is a lone surrogate, deal with it by
+// saving the high surrogate and then combining it with a subsequent low surrogate.
+- (NSData *)dataForInputString:(NSString *)string usingEncoding:(NSStringEncoding)encoding {
+    NSData *data = [string dataUsingEncoding:encoding allowLossyConversion:YES];
+    if (data) {
+        _shell.pendingHighSurrogate = 0;
+        return data;
+    }
+    if (string.length != 1) {
+        _shell.pendingHighSurrogate = 0;
+        return nil;
+    }
+
+    const unichar c = [string characterAtIndex:0];
+    if (IsHighSurrogate(c)) {
+        _shell.pendingHighSurrogate = c;
+        DLog(@"Detected high surrogate 0x%x", (int)c);
+        return nil;
+    } else if (IsLowSurrogate(c) && _shell.pendingHighSurrogate) {
+        DLog(@"Detected low surrogate 0x%x with pending high surrogate 0x%x", (int)c, (int)_shell.pendingHighSurrogate);
+        unichar chars[2] = { _shell.pendingHighSurrogate, c };
+        _shell.pendingHighSurrogate = 0;
+        NSString *composite = [NSString stringWithCharacters:chars length:2];
+        return [composite dataUsingEncoding:encoding allowLossyConversion:YES];
+    }
+
+    _shell.pendingHighSurrogate = 0;
+    return nil;
+}
 
 - (void)writeTaskNoBroadcast:(NSString *)string {
     [self writeTaskNoBroadcast:string encoding:_terminal.encoding forceEncoding:NO];
@@ -3576,7 +3612,7 @@ ITERM_WEAKLY_REFERENCEABLE
                                                                       inProfile:aDict]];
 
     // Color scheme
-    // ansiColosMatchingForeground:andBackground:inBookmark does an equality comparison, so
+    // ansiColorsMatchingForeground:andBackground:inBookmark does an equality comparison, so
     // iTermProfilePreferences is not used here.
     [self setColorFgBgVariable:[self ansiColorsMatchingForeground:aDict[KEY_FOREGROUND_COLOR]
                                                     andBackground:aDict[KEY_BACKGROUND_COLOR]
@@ -3631,7 +3667,7 @@ ITERM_WEAKLY_REFERENCEABLE
                                                       inProfile:aDict]
                    nonAscii:[iTermProfilePreferences boolForKey:KEY_NONASCII_ANTI_ALIASED
                                                       inProfile:aDict]];
-
+    [_textview setUseNativePowerlineGlyphs:[iTermProfilePreferences boolForKey:KEY_POWERLINE inProfile:aDict]];
     [self setEncoding:[iTermProfilePreferences unsignedIntegerForKey:KEY_CHARACTER_ENCODING inProfile:aDict]];
     [self setTermVariable:[iTermProfilePreferences stringForKey:KEY_TERMINAL_TYPE inProfile:aDict]];
     [_terminal setAnswerBackString:[iTermProfilePreferences stringForKey:KEY_ANSWERBACK_STRING inProfile:aDict]];
@@ -3815,6 +3851,9 @@ ITERM_WEAKLY_REFERENCEABLE
     DLog(@"Fit layout to window on session delegate change");
     [_tmuxController fitLayoutToWindows];
     [self useTransparencyDidChange];
+    [self.variablesScope setValue:[delegate sessionTabVariables]
+                 forVariableNamed:iTermVariableKeySessionTab
+                             weak:YES];
 }
 
 - (NSString *)name {
@@ -4328,7 +4367,7 @@ ITERM_WEAKLY_REFERENCEABLE
 }
 
 - (void)updateDisplayBecause:(NSString *)reason {
-    DLog(@"updateDisplayBecause:%@", reason);
+    DLog(@"updateDisplayBecause:%@ %@", reason, _cadenceController);
     _updateCount++;
     if (@available(macOS 10.11, *)) {
         if (_useMetal && _updateCount % 10 == 0) {
@@ -4533,6 +4572,7 @@ ITERM_WEAKLY_REFERENCEABLE
 - (void)apiServerUnsubscribe:(NSNotification *)notification {
     [_promptSubscriptions removeObjectForKey:notification.object];
     [_keystrokeSubscriptions removeObjectForKey:notification.object];
+    [_keyboardFilterSubscriptions removeObjectForKey:notification.object];
     [_updateSubscriptions removeObjectForKey:notification.object];
     [_locationChangeSubscriptions removeObjectForKey:notification.object];
     [_customEscapeSequenceNotifications removeObjectForKey:notification.object];
@@ -4980,6 +5020,12 @@ ITERM_WEAKLY_REFERENCEABLE
         }
         return NO;
     }
+    if (!self.view.window) {
+        if (reason) {
+            *reason = iTermMetalUnavailableReasonSessionHasNoWindow;
+        }
+        return NO;
+    }
     if ([PTYSession onePixelContext] == nil) {
         if (reason) {
             *reason = iTermMetalUnavailableReasonContextAllocationFailure;
@@ -5271,13 +5317,32 @@ ITERM_WEAKLY_REFERENCEABLE
     DLog(@"%@", self);
     const CGSize cellSize = CGSizeMake(_textview.charWidth, _textview.lineHeight);
     CGSize glyphSize;
+    const CGFloat scale = _view.window.backingScaleFactor ?: 1;
+    NSRect rect = [iTermCharacterSource boundingRectForCharactersInRange:NSMakeRange(32, 127-32)
+                                                           asciiFontInfo:_textview.primaryFont
+                                                        nonAsciiFontInfo:_textview.secondaryFont
+                                                                   scale:scale
+                                                             useBoldFont:_textview.useBoldFont
+                                                           useItalicFont:_textview.useItalicFont
+                                                        usesNonAsciiFont:_textview.useNonAsciiFont
+                                                                 context:[PTYSession onePixelContext]];
+    CGSize asciiOffset = CGSizeZero;
+    if (rect.origin.y < 0) {
+        // Iosevka Light is the only font I've found that needs this.
+        // It rides *very* low in its box. The lineheight that PTYFontInfo calculates is actually too small
+        // to contain the glyphs (it uses a weird algorithm that was discovered "organically").
+        // There are gobs of empty pixels at the top, so we shift all its ASCII glyphs a bit so they'll
+        // fit. Non-ASCII characters may take multiple parts and so can properly extend beyond their
+        // cell, so we only need to think about ASCII. In other words, this hack shifts the character up
+        // *in the texture* to make better use of space without using a larger glyph size.
+        //
+        // In a monochrome world, this is still necessary because even though glyph size and cell
+        // size are no longer required to be the same, part of the glyph will be drawn outside its
+        // bounds and get clipped in the texture.
+        asciiOffset.height = -floor(rect.origin.y * scale);
+    }
     if (iTermTextIsMonochrome()) {
         // Mojave can use a glyph size larger than cell size because compositing is trivial without subpixel AA.
-        NSRect rect = [iTermCharacterSource boundingRectForCharactersInRange:NSMakeRange(32, 127-32)
-                                                                        font:_textview.font
-                                                              baselineOffset:_textview.primaryFont.baselineOffset
-                                                                       scale:_view.window.backingScaleFactor ?: 1
-                                                                     context:[PTYSession onePixelContext]];
         glyphSize.width = MAX(cellSize.width, NSMaxX(rect));
         glyphSize.height = MAX(cellSize.height, NSMaxY(rect));
     } else {
@@ -5292,6 +5357,11 @@ ITERM_WEAKLY_REFERENCEABLE
         }
         _errorCreatingMetalContext = YES;
         [self.delegate sessionUpdateMetalAllowed];
+        if (!_useMetal) {
+            DLog(@"Failed to create context for %@ but metal is not allowed", self);
+            return;
+        }
+        DLog(@"Failed to create context for %@. schedule retry", self);
         __weak __typeof(self) weakSelf = self;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
@@ -5303,6 +5373,7 @@ ITERM_WEAKLY_REFERENCEABLE
        cellSizeWithoutSpacing:CGSizeMake(_textview.charWidthWithoutSpacing, _textview.charHeightWithoutSpacing)
                     glyphSize:glyphSize
                      gridSize:_screen.currentGrid.size
+                  asciiOffset:asciiOffset
                         scale:_view.window.screen.backingScaleFactor
                       context:_metalContext];
 }
@@ -5339,7 +5410,12 @@ ITERM_WEAKLY_REFERENCEABLE
 
 #pragma mark - Password Management
 
+- (BOOL)canOpenPasswordManager {
+    return !self.echoProbe.isActive;
+}
+
 - (void)enterPassword:(NSString *)password {
+    _echoProbe.delegate = self;
     [_echoProbe beginProbeWithBackspace:[self backspaceData]
                                password:password];
 }
@@ -5375,7 +5451,7 @@ ITERM_WEAKLY_REFERENCEABLE
         [_pbtext release];
         _pbtext = nil;
 
-        // In case it was the find pasteboard that chagned
+        // In case it was the find pasteboard that changed
         [[NSNotificationCenter defaultCenter] postNotificationName:@"iTermLoadFindStringFromSharedPasteboard"
                                                             object:nil
                                                           userInfo:nil];
@@ -5833,6 +5909,14 @@ ITERM_WEAKLY_REFERENCEABLE
 - (void)tmuxHostDisconnected:(NSString *)dcsID {
     _hideAfterTmuxWindowOpens = NO;
 
+    if ([iTermPreferences boolForKey:kPreferenceKeyAutoHideTmuxClientSession] &&
+        [[[iTermBuriedSessions sharedInstance] buriedSessions] containsObject:self]) {
+        // Do this before detaching because it may be the only tab in a hotkey window. If all the
+        // tabs close the window is destroyed and it breaks the reference from iTermProfileHotkey.
+        // See issue 7384.
+        [[iTermBuriedSessions sharedInstance] restoreSession:self];
+    }
+
     [_tmuxController detach];
     // Autorelease the gateway because it called this function so we can't free
     // it immediately.
@@ -5850,10 +5934,6 @@ ITERM_WEAKLY_REFERENCEABLE
     self.tmuxMode = TMUX_NONE;
     [self.variablesScope setValue:nil forVariableNamed:iTermVariableKeySessionTmuxClientName];
     [self.variablesScope setValue:nil forVariableNamed:iTermVariableKeySessionTmuxWindowTitle];
-    if ([iTermPreferences boolForKey:kPreferenceKeyAutoHideTmuxClientSession] &&
-        [[[iTermBuriedSessions sharedInstance] buriedSessions] containsObject:self]) {
-        [[iTermBuriedSessions sharedInstance] restoreSession:self];
-    }
 }
 
 - (void)tmuxCannotSendCharactersInSupplementaryPlanes:(NSString *)string windowPane:(int)windowPane {
@@ -6046,7 +6126,7 @@ ITERM_WEAKLY_REFERENCEABLE
         }
     }
 
-    // All necessary conditions are statisifed. Now find one that is sufficient.
+    // All necessary conditions are satisifed. Now find one that is sufficient.
     for (NSInteger i = 0; i < pattern.keycodesArray_Count; i++) {
         if (event.keyCode == [pattern.keycodesArray valueAtIndex:i]) {
             return YES;
@@ -6066,9 +6146,9 @@ ITERM_WEAKLY_REFERENCEABLE
 }
 
 - (BOOL)keystrokeIsFilteredByMonitor:(NSEvent *)event {
-    for (NSString *identifier in _keystrokeSubscriptions) {
-        ITMNotificationRequest *request = _keystrokeSubscriptions[identifier];
-        for (ITMKeystrokePattern *pattern in request.keystrokeMonitorRequest.patternsToIgnoreArray) {
+    for (NSString *identifier in _keyboardFilterSubscriptions) {
+        ITMNotificationRequest *request = _keyboardFilterSubscriptions[identifier];
+        for (ITMKeystrokePattern *pattern in request.keystrokeFilterRequest.patternsToIgnoreArray) {
             if ([self event:event matchesPattern:pattern]) {
                 return YES;
             }
@@ -6995,6 +7075,9 @@ ITERM_WEAKLY_REFERENCEABLE
         spacesPerTab = [_pasteHelper numberOfSpacesToConvertTabsTo:theString];
         if (spacesPerTab >= 0) {
             tabTransform = kTabTransformConvertToSpaces;
+        } else if (spacesPerTab == kNumberOfSpacesPerTabOpenAdvancedPaste) {
+            [_pasteHelper showAdvancedPasteWithFlags:flags];
+            return;
         } else if (spacesPerTab == kNumberOfSpacesPerTabCancel) {
             return;
         }
@@ -7307,6 +7390,11 @@ ITERM_WEAKLY_REFERENCEABLE
 
 - (void)textViewDidBecomeFirstResponder {
     [_delegate setActiveSession:self];
+    [_view setNeedsDisplay:YES];
+}
+
+- (void)textViewDidResignFirstResponder {
+    [_view setNeedsDisplay:YES];
 }
 
 - (BOOL)textViewReportMouseEvent:(NSEventType)eventType
@@ -7335,7 +7423,7 @@ ITERM_WEAKLY_REFERENCEABLE
                     return YES;
 
                 case MOUSE_REPORTING_NONE:
-                case MOUSE_REPORTING_HILITE:
+                case MOUSE_REPORTING_HIGHLIGHT:
                     break;
             }
             break;
@@ -7359,7 +7447,7 @@ ITERM_WEAKLY_REFERENCEABLE
                         return YES;
 
                     case MOUSE_REPORTING_NONE:
-                    case MOUSE_REPORTING_HILITE:
+                    case MOUSE_REPORTING_HIGHLIGHT:
                         break;
                 }
             }
@@ -7399,7 +7487,7 @@ ITERM_WEAKLY_REFERENCEABLE
                         return YES;
 
                     case MOUSE_REPORTING_NONE:
-                    case MOUSE_REPORTING_HILITE:
+                    case MOUSE_REPORTING_HIGHLIGHT:
                         break;
                 }
             }
@@ -7439,7 +7527,7 @@ ITERM_WEAKLY_REFERENCEABLE
                     return YES;
 
                 case MOUSE_REPORTING_NONE:
-                case MOUSE_REPORTING_HILITE:
+                case MOUSE_REPORTING_HIGHLIGHT:
                     break;
             }
             break;
@@ -7681,7 +7769,7 @@ ITERM_WEAKLY_REFERENCEABLE
     }
 }
 
-- (void)textViewDidHighightMark {
+- (void)textViewDidHighlightMark {
     if (self.useMetal) {
         [_textview setNeedsDisplay:YES];
     }
@@ -8181,6 +8269,16 @@ ITERM_WEAKLY_REFERENCEABLE
     }
 }
 
+// Sets current session proxy icon.
+- (void)screenSetPreferredProxyIcon:(NSString *)value {
+    NSURL *url = nil;
+    if (value) {
+        url = [NSURL URLWithString:value];
+    }
+    self.preferredProxyIcon = url;
+    [_delegate sessionProxyIconDidChange:self];
+}
+
 - (BOOL)screenWindowIsMiniaturized {
     return [[_delegate parentWindow] windowIsMiniaturized];
 }
@@ -8545,7 +8643,7 @@ ITERM_WEAKLY_REFERENCEABLE
     [_textview.window makeFirstResponder:_textview];
 }
 
-// Stop pasting (despited the name)
+// Stop pasting (despite the name)
 - (void)screenCopyBufferToPasteboard {
     if ([iTermPreferences boolForKey:kPreferenceKeyAllowClipboardAccessFromTerminal]) {
         [self setPasteboard:nil];
@@ -9340,7 +9438,7 @@ ITERM_WEAKLY_REFERENCEABLE
                         _bellRate = nil;
                         switch (selection) {
                             case -2:  // Dismiss programmatically
-                                DLog(@"Dismiss programatically");
+                                DLog(@"Dismiss programmatically");
                                 break;
 
                             case -1: // No
@@ -9385,7 +9483,7 @@ ITERM_WEAKLY_REFERENCEABLE
                         _bellRate = nil;
                         switch (selection) {
                             case -2:  // Dismiss programmatically
-                                DLog(@"Dismiss programatically");
+                                DLog(@"Dismiss programmatically");
                                 break;
 
                             case -1: // No
@@ -10080,7 +10178,7 @@ ITERM_WEAKLY_REFERENCEABLE
 - (void)drawFrameAndRemoveTemporarilyDisablementOfMetalForToken:(id)token NS_AVAILABLE_MAC(10_11) {
     DLog(@"drawFrameAndRemoveTemporarilyDisablementOfMetal %@", token);
     if (!_useMetal) {
-        DLog(@"drawFrameAndRemoveTemporarilyDisablementOfMetal returning earily because useMetal is off");
+        DLog(@"drawFrameAndRemoveTemporarilyDisablementOfMetal returning early because useMetal is off");
         return;
     }
     if ([_metalDisabledTokens containsObject:token]) {
@@ -10212,7 +10310,7 @@ ITERM_WEAKLY_REFERENCEABLE
 #pragma mark - iTermUpdateCadenceController
 
 - (void)updateCadenceControllerUpdateDisplay:(iTermUpdateCadenceController *)controller {
-    [self updateDisplayBecause:controller.description];
+    [self updateDisplayBecause:nil];
 }
 
 - (iTermUpdateCadenceState)updateCadenceControllerState {
@@ -10440,6 +10538,9 @@ ITERM_WEAKLY_REFERENCEABLE
         case ITMNotificationType_NotifyOnKeystroke:
             subscriptions = _keystrokeSubscriptions;
             break;
+        case ITMNotificationType_KeystrokeFilter:
+            subscriptions = _keyboardFilterSubscriptions;
+            break;
         case ITMNotificationType_NotifyOnScreenUpdate:
             subscriptions = _updateSubscriptions;
             break;
@@ -10580,15 +10681,15 @@ ITERM_WEAKLY_REFERENCEABLE
 
 #pragma mark - iTermEchoProbeDelegate
 
-- (void)echoProbeWriteString:(NSString *)string {
+- (void)echoProbe:(iTermEchoProbe *)echoProbe writeString:(NSString *)string {
     [self writeTaskNoBroadcast:string];
 }
 
-- (void)echoProbeWriteData:(NSData *)data {
+- (void)echoProbe:(iTermEchoProbe *)echoProbe writeData:(NSData *)data {
     [self writeLatin1EncodedData:data broadcastAllowed:NO];
 }
 
-- (void)echoProbeDidFail {
+- (void)echoProbeDidFail:(iTermEchoProbe *)echoProbe {
     BOOL ok = ([iTermWarning showWarningWithTitle:@"Are you really at a password prompt? It looks "
                 @"like what you're typing is echoed to the screen."
                                           actions:@[ @"Cancel", @"Enter Password" ]
@@ -10598,6 +10699,16 @@ ITERM_WEAKLY_REFERENCEABLE
     if (ok) {
         [_echoProbe enterPassword];
     }
+}
+
+- (void)echoProbeDidSucceed:(iTermEchoProbe *)echoProbe {
+}
+
+- (BOOL)echoProbeShouldSendPassword:(iTermEchoProbe *)echoProbe {
+    return YES;
+}
+
+- (void)echoProbeDelegateWillChange:(iTermEchoProbe *)echoProbe {
 }
 
 #pragma mark - iTermBackgroundDrawingHelperDelegate
@@ -10634,7 +10745,7 @@ ITERM_WEAKLY_REFERENCEABLE
 
 - (NSColor *)textColorForStatusBar {
     if (self.view.window.ptyWindow.it_terminalWindowUseMinimalStyle) {
-        return self.view.window.ptyWindow.it_terminalWindowDecorationTextColor;
+        return [self.view.window.ptyWindow it_terminalWindowDecorationTextColorForBackgroundColor:nil];
     } else if (@available(macOS 10.14, *)) {
         return [NSColor labelColor];
     } else if ([_view.effectiveAppearance.name isEqualToString:NSAppearanceNameVibrantDark]) {

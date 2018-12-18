@@ -38,7 +38,7 @@
 #define KEY_NEW_BOOKMARKS               @"New Bookmarks"
 
 #pragma mark - Profile-level keys
-// IMPORATANT: If you add keys, also modify doCopyFrom in PreferencePanel.m.
+// IMPORTANT: If you add keys, also modify doCopyFrom in PreferencePanel.m.
 
 #define KEY_CHILDREN                    @"Children"  // Deprecated
 #define KEY_NAME                        @"Name"
@@ -120,7 +120,7 @@
 #define KEY_USE_CUSTOM_WINDOW_TITLE           @"Use Custom Window Title"
 #define KEY_CUSTOM_WINDOW_TITLE               @"Custom Window Title"
 #define KEY_SCREEN                 @"Screen"
-#define KEY_SPACE                  @"Space"
+#define KEY_SPACE                  @"Space"  // integer, iTermProfileSpaceSetting
 #define KEY_NORMAL_FONT            @"Normal Font"
 #define KEY_NON_ASCII_FONT         @"Non Ascii Font"
 #define KEY_HORIZONTAL_SPACING     @"Horizontal Spacing"
@@ -144,7 +144,8 @@
 #define KEY_BACKGROUND_IMAGE_TILED_DEPRECATED @"Background Image Is Tiled"  // DEPRECATED
 #define KEY_ASCII_LIGATURES        @"ASCII Ligatures"
 #define KEY_NON_ASCII_LIGATURES    @"Non-ASCII Ligatures"
-#define KEY_BACKGROUND_IMAGE_MODE @"Background Image Mode"  // iTermBackgroundImageMode enum
+#define KEY_BACKGROUND_IMAGE_MODE  @"Background Image Mode"  // iTermBackgroundImageMode enum
+#define KEY_POWERLINE              @"Draw Powerline Glyphs"
 
 // Terminal
 #define KEY_DISABLE_WINDOW_RESIZING           @"Disable Window Resizing"
@@ -241,8 +242,10 @@ extern NSString *const iTermUnicodeVersionDidChangeNotification;
 extern const NSTimeInterval kMinimumAntiIdlePeriod;
 
 // Special values for KEY_SPACE.
-extern const NSInteger iTermProfileJoinsAllSpaces;
-extern const NSInteger iTermProfileOpenInCurrentSpace;
+typedef NS_ENUM(NSInteger, iTermProfileSpaceSetting) {
+    iTermProfileJoinsAllSpaces = -1,
+    iTermProfileOpenInCurrentSpace = 0
+};
 
 // The numerical values for each enum matter because they are used in
 // the UI as "tag" values for each select list item. They are also

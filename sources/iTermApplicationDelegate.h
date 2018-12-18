@@ -48,7 +48,7 @@ extern NSString *const iTermDidToggleSecureInputNotification;
 @interface iTermApplicationDelegate : NSObject<iTermApplicationDelegate>
 
 @property(nonatomic, readonly) BOOL workspaceSessionActive;
-@property(nonatomic, readonly) BOOL isApplescriptTestApp;
+@property(nonatomic, readonly) BOOL isAppleScriptTestApp;
 @property(nonatomic, readonly) BOOL isRunningOnTravis;
 
 // Returns one of the kMarkAlertAction strings defined above.
@@ -65,7 +65,6 @@ extern NSString *const iTermDidToggleSecureInputNotification;
 
 - (void)updateMaximizePaneMenuItem;
 - (void)updateUseTransparencyMenuItem;
-- (void)updateBroadcastMenuState;
 
 - (void)makeHotKeyWindowKeyIfOpen;
 
@@ -74,6 +73,7 @@ extern NSString *const iTermDidToggleSecureInputNotification;
 
 - (void)openPasswordManagerToAccountName:(NSString *)name inSession:(PTYSession *)session;
 - (void)updateBuriedSessionsMenu;
+- (void)didToggleTraditionalFullScreenMode;
 
 #pragma mark - Actions
 

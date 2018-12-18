@@ -505,7 +505,7 @@ typedef struct iTermTextColorContext {
                                         run->bgColorMode == ColorModeAlternate);
         // When set in preferences, applies alpha only to the defaultBackground
         // color, useful for keeping Powerline segments opacity(background)
-        // consistent with their seperator glyphs opacity(foreground).
+        // consistent with their separator glyphs opacity(foreground).
         if (_transparencyAffectsOnlyDefaultBackgroundColor && !defaultBackground) {
             alpha = 1;
         }
@@ -1143,21 +1143,14 @@ typedef struct iTermTextColorContext {
     [transform translateXBy:pos.x yBy:pos.y];
     [transform concat];
 
-    BOOL solid = NO;
-    for (NSBezierPath *path in [iTermBoxDrawingBezierCurveFactory bezierPathsForBoxDrawingCode:theCharacter
-                                                                                      cellSize:_cellSize
-                                                                                         scale:1
-                                                                                        offset:CGPointZero
-                                                                                         solid:&solid]) {
-        NSColor *color = [NSColor colorWithCGColor:(CGColorRef)attributes[(NSString *)kCTForegroundColorAttributeName]];
-        [color set];
-        if (solid) {
-            [path fill];
-        } else {
-            [path stroke];
-        }
-    }
-
+    NSColor *color = [NSColor colorWithCGColor:(CGColorRef)attributes[(NSString *)kCTForegroundColorAttributeName]];
+    [color set];
+    [iTermBoxDrawingBezierCurveFactory drawCodeInCurrentContext:theCharacter
+                                                       cellSize:_cellSize
+                                                          scale:1
+                                                         offset:CGPointZero
+                                                          color:color
+                                       useNativePowerlineGlyphs:self.useNativePowerlineGlyphs];
     [ctx restoreGraphicsState];
 }
 
@@ -1178,7 +1171,15 @@ typedef struct iTermTextColorContext {
     }
 }
 
-- (int)setSmoothingWithContext:(CGContextRef)ctx savedFontSmoothingStyle:(int *)savedFontSmoothingStyle useThinStrokes:(BOOL)useThinStrokes {
+- (int)setSmoothingWithContext:(CGContextRef)ctx
+       savedFontSmoothingStyle:(int *)savedFontSmoothingStyle
+                useThinStrokes:(BOOL)useThinStrokes
+                    antialised:(BOOL)antialiased {
+    if (!antialiased) {
+        // Issue 7394.
+        CGContextSetShouldSmoothFonts(ctx, YES);
+        return -1;
+    }
     BOOL shouldSmooth = useThinStrokes;
     int style = -1;
     if (iTermTextIsMonochrome()) {
@@ -1263,7 +1264,10 @@ typedef struct iTermTextColorContext {
     const BOOL useThinStrokes = [self useThinStrokesAgainstBackgroundColor:backgroundColor
                                                            foregroundColor:color];
     int savedFontSmoothingStyle = 0;
-    int style = [self setSmoothingWithContext:ctx savedFontSmoothingStyle:&savedFontSmoothingStyle useThinStrokes:useThinStrokes];
+    int style = [self setSmoothingWithContext:ctx
+                      savedFontSmoothingStyle:&savedFontSmoothingStyle
+                               useThinStrokes:useThinStrokes
+                                   antialised:antiAlias];
 
     size_t numCodes = cheapString.length;
     size_t length = numCodes;
@@ -1404,7 +1408,10 @@ typedef struct iTermTextColorContext {
     BOOL useThinStrokes = [self useThinStrokesAgainstBackgroundColor:backgroundColor
                                                      foregroundColor:cgColor];
     int savedFontSmoothingStyle = 0;
-    int style = [self setSmoothingWithContext:cgContext savedFontSmoothingStyle:&savedFontSmoothingStyle useThinStrokes:useThinStrokes];
+    int style = [self setSmoothingWithContext:cgContext
+                      savedFontSmoothingStyle:&savedFontSmoothingStyle
+                               useThinStrokes:useThinStrokes
+                                   antialised:antiAlias];
 
     const CGFloat ty = origin.y + _baselineOffset + _cellSize.height;
     CGAffineTransform textMatrix = CGAffineTransformMake(1.0, 0.0,
@@ -1713,7 +1720,7 @@ static BOOL iTermTextDrawingHelperShouldAntiAlias(screen_char_t *c,
     }
 
     if (likely(!imageAttributes && !previousImageAttributes)) {
-        // Not an image cell. Try to quicly check if the attributes are the same, which is the normal case.
+        // Not an image cell. Try to quickly check if the attributes are the same, which is the normal case.
         if (likely(!memcmp(previousAttributes, newAttributes, sizeof(*previousAttributes)))) {
             // Identical, byte-for-byte
             *combinedAttributesChanged = NO;
@@ -1773,7 +1780,7 @@ static BOOL iTermTextDrawingHelperShouldAntiAlias(screen_char_t *c,
     const BOOL isComplex = c->complexChar;
     const unichar code = c->code;
 
-    attributes->boxDrawing = !isComplex && [[iTermBoxDrawingBezierCurveFactory boxDrawingCharactersWithBezierPaths] characterIsMember:code];
+    attributes->boxDrawing = !isComplex && [[iTermBoxDrawingBezierCurveFactory boxDrawingCharactersWithBezierPathsIncludingPowerline:_useNativePowerlineGlyphs] characterIsMember:code];
 
     if (forceTextColor) {
         attributes->foregroundColor = forceTextColor;
@@ -1872,7 +1879,7 @@ static BOOL iTermTextDrawingHelperShouldAntiAlias(screen_char_t *c,
         static NSCharacterSet *boxSet;
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            boxSet = [[iTermBoxDrawingBezierCurveFactory boxDrawingCharactersWithBezierPaths] retain];
+            boxSet = [[iTermBoxDrawingBezierCurveFactory boxDrawingCharactersWithBezierPathsIncludingPowerline:_useNativePowerlineGlyphs] retain];
         });
         BOOL box = [boxSet characterIsMember:c->code];
         BOOL pcBox = [boxSet characterIsMember:pc->code];

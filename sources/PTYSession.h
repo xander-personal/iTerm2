@@ -2,6 +2,7 @@
 
 #import "Api.pbobjc.h"
 #import "DVR.h"
+#import "iTermEchoProbe.h"
 #import "iTermFindDriver.h"
 #import "iTermFileDescriptorClient.h"
 #import "iTermMetalUnavailableReason.h"
@@ -37,6 +38,7 @@ extern NSString *const PTYSessionRevivedNotification;
 @class CapturedOutput;
 @class FakeWindow;
 @class iTermAnnouncementViewController;
+@class iTermEchoProbe;
 @class iTermStatusBarViewController;
 @class iTermVariables;
 @class iTermVariableScope;
@@ -69,7 +71,7 @@ typedef enum {
     TMUX_CLIENT  // Session mirrors a tmux virtual window
 } PTYSessionTmuxMode;
 
-// This is implemented by a view that coontains a collection of sessions, nominally a tab.
+// This is implemented by a view that contains a collection of sessions, nominally a tab.
 @protocol PTYSessionDelegate<NSObject>
 
 // Return the window controller for this session. This is the "real" one, not a
@@ -106,7 +108,7 @@ typedef enum {
 - (void)updateLabelAttributes;
 
 // End the session (calling terminate normally or killing/hiding a tmux
-// session), and closes the tab if neeed.
+// session), and closes the tab if needed.
 - (void)closeSession:(PTYSession *)session;
 
 // Sets whether the bell indicator should show.
@@ -165,7 +167,7 @@ typedef enum {
 // The tmux window title changed.
 - (void)sessionDidChangeTmuxWindowNameTo:(NSString *)newName;
 
-// Returns the objectSpecifier of the tab (used to identify a tab for Applescript).
+// Returns the objectSpecifier of the tab (used to identify a tab for AppleScript).
 - (NSScriptObjectSpecifier *)objectSpecifier;
 
 // Returns the tmux window ID of the containing tab. -1 if not tmux.
@@ -193,6 +195,7 @@ typedef enum {
 
 - (void)sessionCurrentDirectoryDidChange:(PTYSession *)session;
 - (void)sessionCurrentHostDidChange:(PTYSession *)session;
+- (void)sessionProxyIconDidChange:(PTYSession *)session;
 
 // Remove a session from the tab, even if it's the only one.
 - (void)sessionRemoveSession:(PTYSession *)session;
@@ -222,6 +225,7 @@ typedef enum {
 
 @class SessionView;
 @interface PTYSession : NSResponder <
+    iTermEchoProbeDelegate,
     iTermFindDriverDelegate,
     iTermWeaklyReferenceable,
     PopupDelegate,
@@ -277,6 +281,10 @@ typedef enum {
 // The window title that should be used when this session is current. Otherwise defaultName
 // should be used.
 @property(nonatomic, readonly) NSString *windowTitle;
+
+// The path to the proxy icon that should be used when this session is current. If is nil the current directory icon
+// is shown.
+@property(nonatomic, retain) NSURL *preferredProxyIcon;
 
 // Shell wraps the underlying file descriptor pair.
 @property(nonatomic, retain) PTYTask *shell;
@@ -365,11 +373,11 @@ typedef enum {
 @property(nonatomic) BOOL useMetal;
 
 // Has this session's bookmark been divorced from the profile in the ProfileModel? Changes
-// in this bookmark may happen indepentendly of the persistent bookmark.
+// in this bookmark may happen independently of the persistent bookmark.
 // You should usually not assign to this; instead use divorceAddressBookEntryFromPreferences.
 @property(nonatomic, assign) BOOL isDivorced;
 
-// Ignore resize notifications. This would be set because the session's size musn't be changed
+// Ignore resize notifications. This would be set because the session's size mustn't be changed
 // due to temporary changes in the window size, as code later on may need to know the session's
 // size to set the window size properly.
 @property(nonatomic, assign) BOOL ignoreResizeNotifications;
@@ -405,7 +413,7 @@ typedef enum {
 
 @property(nonatomic, assign) BOOL highlightCursorLine;
 
-// Used to help remember total ordering on views while one is maximzied
+// Used to help remember total ordering on views while one is maximized
 @property(nonatomic, assign) NSPoint savedRootRelativeOrigin;
 
 // The computed label
@@ -470,6 +478,9 @@ typedef enum {
 @property(nonatomic, readonly) NSImage *tabGraphic;
 @property(nonatomic, readonly) iTermStatusBarViewController *statusBarViewController;
 @property(nonatomic, readonly) BOOL shouldShowTabGraphic;
+@property(nonatomic, readonly) NSData *backspaceData;
+@property(nonatomic, readonly) iTermEchoProbe *echoProbe;
+@property(nonatomic, readonly) BOOL canOpenPasswordManager;
 
 #pragma mark - methods
 
@@ -574,6 +585,8 @@ typedef enum {
                     encoding:(NSStringEncoding)optionalEncoding
                forceEncoding:(BOOL)forceEncoding;
 
+- (void)writeLatin1EncodedData:(NSData *)data broadcastAllowed:(BOOL)broadcast;
+
 // PTYTextView
 - (BOOL)hasTextSendingKeyMappingForEvent:(NSEvent*)event;
 - (BOOL)willHandleEvent: (NSEvent *)theEvent;
@@ -595,7 +608,7 @@ typedef enum {
 - (void)setMinimumContrast:(float)value;
 
 // Returns the frame size for a scrollview that perfectly contains the contents
-// of this session based on rows/cols, and taking into acount the presence of
+// of this session based on rows/cols, and taking into account the presence of
 // a scrollbar.
 - (NSSize)idealScrollViewSizeWithStyle:(NSScrollerStyle)scrollerStyle;
 

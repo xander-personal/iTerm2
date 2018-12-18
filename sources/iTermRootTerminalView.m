@@ -160,11 +160,13 @@ static const CGFloat kMaximumToolbeltSizeAsFractionOfWindow = 0.5;
         _windowNumberLabel = [NSTextField newLabelStyledTextField];
         _windowNumberLabel.alphaValue = 0.75;
         _windowNumberLabel.hidden = YES;
+        _windowNumberLabel.autoresizingMask = (NSViewMaxXMargin | NSViewMinYMargin);
         [self addSubview:_windowNumberLabel];
 
         _windowTitleLabel = [NSTextField newLabelStyledTextField];
         _windowTitleLabel.alignment = NSTextAlignmentCenter;
         _windowTitleLabel.hidden = YES;
+        _windowTitleLabel.autoresizingMask = (NSViewMinYMargin | NSViewWidthSizable);
         [self addSubview:_windowTitleLabel];
     }
     return self;
@@ -279,6 +281,15 @@ static const CGFloat kMaximumToolbeltSizeAsFractionOfWindow = 0.5;
         return;
     }
     [self didChangeCompactness];
+    for (int i = 0; i < self.numberOfWindowButtons; i++) {
+        NSButton *button = _standardButtons[@(self.windowButtonTypes[i])];
+        if (self.windowButtonTypes[i] == NSWindowZoomButton) {
+            button.target = _standardWindowButtonsView;
+            button.action = @selector(zoomButtonEvent);
+        } else {
+            button.target = self.window;
+        }
+    }
 }
 
 - (void)didChangeCompactness {
@@ -311,6 +322,7 @@ static const CGFloat kMaximumToolbeltSizeAsFractionOfWindow = 0.5;
         frame.origin.x = x;
         frame.origin.y = 4;
         button.frame = frame;
+
         [_standardWindowButtonsView addSubview:button];
         _standardButtons[@(self.windowButtonTypes[i])] = button;
         x += stride;
@@ -319,6 +331,16 @@ static const CGFloat kMaximumToolbeltSizeAsFractionOfWindow = 0.5;
         });
     }
     [self layoutSubviews];
+}
+
+- (void)flagsChanged:(NSEvent *)event {
+    if (_standardWindowButtonsView) {
+        NSUInteger modifiers = ([NSEvent modifierFlags] & NSEventModifierFlagDeviceIndependentFlagsMask);
+        BOOL optionKey = modifiers & NSEventModifierFlagOption ? YES : NO;
+        
+        [_standardWindowButtonsView setOptionModifier:optionKey];
+    }
+    [super flagsChanged:event];
 }
 
 - (void)drawRect:(NSRect)dirtyRect {
@@ -458,7 +480,7 @@ static const CGFloat kMaximumToolbeltSizeAsFractionOfWindow = 0.5;
 - (void)windowNumberDidChangeTo:(NSNumber *)number {
     _windowNumber = number;
     BOOL deemphasized;
-    _windowNumberLabel.stringValue = [iTermWindowShortcutLabelTitlebarAccessoryViewController stringForOrdinal:number.intValue deempahsized:&deemphasized];
+    _windowNumberLabel.stringValue = [iTermWindowShortcutLabelTitlebarAccessoryViewController stringForOrdinal:number.intValue deemphasized:&deemphasized];
 }
 
 #pragma mark - Division View

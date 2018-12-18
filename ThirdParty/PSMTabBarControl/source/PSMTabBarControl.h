@@ -96,7 +96,7 @@ extern PSMTabBarControlOptionKey PSMTabBarControlOptionColoredUnselectedTabTextP
 - (void)tabView:(NSTabView*)aTabView didDropTabViewItem:(NSTabViewItem *)tabViewItem inTabBar:(PSMTabBarControl *)tabBarControl;
 
 //Tear-off tabs methods
-- (NSImage *)tabView:(NSTabView *)aTabView imageForTabViewItem:(NSTabViewItem *)tabViewItem offset:(NSSize *)offset styleMask:(unsigned int *)styleMask;
+- (NSImage *)tabView:(NSTabView *)aTabView imageForTabViewItem:(NSTabViewItem *)tabViewItem styleMask:(unsigned int *)styleMask;
 - (PSMTabBarControl *)tabView:(NSTabView *)aTabView newTabBarForDraggedTabViewItem:(NSTabViewItem *)tabViewItem atPoint:(NSPoint)point;
 - (void)tabView:(NSTabView *)aTabView closeWindowForLastTabViewItem:(NSTabViewItem *)tabViewItem;
 
@@ -191,6 +191,7 @@ enum {
 
 // control characteristics
 + (NSBundle *)bundle;
++ (BOOL)isAnyDragInProgress;
 
 - (void)changeIdentifier:(id)newIdentifier atIndex:(int)theIndex;
 - (void)moveTabAtIndex:(NSInteger)i1 toIndex:(NSInteger)i2;

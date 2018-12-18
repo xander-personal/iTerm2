@@ -9,7 +9,7 @@
 #import "iTerm.h"
 #import "iTermAdvancedSettingsModel.h"
 #import "iTermApplicationDelegate.h"
-#import "iTermAltScreenMouseScrollInferer.h"
+#import "iTermAltScreenMouseScrollInferrer.h"
 #import "iTermBadgeLabel.h"
 #import "iTermColorMap.h"
 #import "iTermController.h"
@@ -112,7 +112,7 @@ static const int kDragThreshold = 3;
 @end
 
 @interface PTYTextView () <
-    iTermAltScreenMouseScrollInfererDelegate,
+    iTermAltScreenMouseScrollInferrerDelegate,
     iTermTextViewAccessibilityHelperDelegate,
     iTermFindCursorViewDelegate,
     iTermFindOnPageHelperDelegate,
@@ -245,7 +245,7 @@ static const int kDragThreshold = 3;
     iTermNSKeyBindingEmulator *_keyBindingEmulator;
 
     // Detects when the user is trying to scroll in alt screen with the scroll wheel.
-    iTermAltScreenMouseScrollInferer *_altScreenMouseScrollInferer;
+    iTermAltScreenMouseScrollInferrer *_altScreenMouseScrollInferrer;
 
     NSEvent *_eventBeingHandled;
 
@@ -350,8 +350,8 @@ static const int kDragThreshold = 3;
         _badgeLabel = [[iTermBadgeLabel alloc] init];
         _keyBindingEmulator = [[iTermNSKeyBindingEmulator alloc] init];
 
-        _altScreenMouseScrollInferer = [[iTermAltScreenMouseScrollInferer alloc] init];
-        _altScreenMouseScrollInferer.delegate = self;
+        _altScreenMouseScrollInferrer = [[iTermAltScreenMouseScrollInferrer alloc] init];
+        _altScreenMouseScrollInferrer.delegate = self;
         [self refuseFirstResponderAtCurrentMouseLocation];
 
         _scrollAccumulator = [[iTermScrollAccumulator alloc] init];
@@ -424,7 +424,7 @@ static const int kDragThreshold = 3;
     [_quickLookController release];
     [_savedSelectedText release];
     [_keyBindingEmulator release];
-    [_altScreenMouseScrollInferer release];
+    [_altScreenMouseScrollInferrer release];
     [_highlightedRows release];
     [_scrollAccumulator release];
     [_shadowRateLimit release];
@@ -544,9 +544,10 @@ static const int kDragThreshold = 3;
 
 - (BOOL)resignFirstResponder {
     if (!self.it_shouldIgnoreFirstResponderChanges) {
-        [_altScreenMouseScrollInferer firstResponderDidChange];
+        [_altScreenMouseScrollInferrer firstResponderDidChange];
         [self removeUnderline];
         [self placeFindCursorOnAutoHide];
+        [_delegate textViewDidResignFirstResponder];
         DLog(@"resignFirstResponder %@", self);
         DLog(@"%@", [NSThread callStackSymbols]);
     } else {
@@ -557,7 +558,7 @@ static const int kDragThreshold = 3;
 
 - (BOOL)becomeFirstResponder {
     if (!self.it_shouldIgnoreFirstResponderChanges) {
-        [_altScreenMouseScrollInferer firstResponderDidChange];
+        [_altScreenMouseScrollInferrer firstResponderDidChange];
         [_delegate textViewDidBecomeFirstResponder];
         DLog(@"becomeFirstResponder %@", self);
         DLog(@"%@", [NSThread callStackSymbols]);
@@ -1158,6 +1159,7 @@ static const int kDragThreshold = 3;
     _drawingHelper.passwordInput = ([self isInKeyWindow] &&
                                     [_delegate textViewIsActiveSession] &&
                                     _delegate.textViewPasswordInput);
+    _drawingHelper.useNativePowerlineGlyphs = self.useNativePowerlineGlyphs;
 
     CGFloat rightMargin = 0;
     if (_drawingHelper.showTimestamps) {
@@ -1281,7 +1283,7 @@ static const int kDragThreshold = 3;
                              y:(int)y
                             to:(VT100GridWindowedRange *)rangePtr
               ignoringNewlines:(BOOL)ignoringNewlines
-                actionRequired:(BOOL)actionRequred
+                actionRequired:(BOOL)actionRequired
                respectDividers:(BOOL)respectDividers {
     iTermTextExtractor *extractor = [iTermTextExtractor textExtractorWithDataSource:_dataSource];
     VT100GridCoord coord = VT100GridCoordMake(x, y);
@@ -1290,7 +1292,7 @@ static const int kDragThreshold = 3;
     }
     return [extractor smartSelectionAt:coord
                              withRules:_smartSelectionRules
-                        actionRequired:actionRequred
+                        actionRequired:actionRequired
                                  range:rangePtr
                       ignoringNewlines:ignoringNewlines];
 }
@@ -1324,8 +1326,10 @@ static const int kDragThreshold = 3;
 // view handles it. It's necessary to setUserScroll in the PTYScroller, or else
 // it scrolls back to the bottom right away. This code handles those two
 // keypresses and scrolls correctly.
-- (BOOL)performKeyEquivalent:(NSEvent *)theEvent
-{
+- (BOOL)performKeyEquivalent:(NSEvent *)theEvent {
+    if (self.window.firstResponder != self) {
+        return [super performKeyEquivalent:theEvent];
+    }
     NSString* unmodkeystr = [theEvent charactersIgnoringModifiers];
     if ([unmodkeystr length] == 0) {
         return [super performKeyEquivalent:theEvent];
@@ -1360,7 +1364,7 @@ static const int kDragThreshold = 3;
 // * "special" keys, like Enter which go through doCommandBySelector
 // * Repeated special keys
 - (void)keyDown:(NSEvent *)event {
-    [_altScreenMouseScrollInferer keyDown:event];
+    [_altScreenMouseScrollInferrer keyDown:event];
     if (![_delegate textViewShouldAcceptKeyDownEvent:event]) {
         return;
     }
@@ -1404,7 +1408,7 @@ static const int kDragThreshold = 3;
     DLog(@"_hadMarkedTextBeforeHandlingKeypressEvent=%d", (int)_hadMarkedTextBeforeHandlingKeypressEvent);
     DLog(@"hasActionableKeyMappingForEvent=%d", (int)[delegate hasActionableKeyMappingForEvent:event]);
     DLog(@"modFlag & (NSEventModifierFlagNumericPad | NSEventModifierFlagFunction)=%lu", (modflag & (NSEventModifierFlagNumericPad | NSEventModifierFlagFunction)));
-    DLog(@"charactersIgnoringModififiers length=%d", (int)[[event charactersIgnoringModifiers] length]);
+    DLog(@"charactersIgnoringModifiers length=%d", (int)[[event charactersIgnoringModifiers] length]);
     DLog(@"delegate optionkey=%d, delegate rightOptionKey=%d", (int)[delegate optionKey], (int)[delegate rightOptionKey]);
     DLog(@"leftAltPressed && optionKey != NORMAL = %d", (int)(leftAltPressed && [delegate optionKey] != OPT_NORMAL));
     DLog(@"rightAltPressed && rightOptionKey != NORMAL = %d", (int)(rightAltPressed && [delegate rightOptionKey] != OPT_NORMAL));
@@ -1507,7 +1511,7 @@ static const int kDragThreshold = 3;
         DLog(@"PTYTextView keyDown send to IME");
 
         // In issue 2743, it is revealed that in OS 10.9 this sometimes calls -insertText on the
-        // wrong instnace of PTYTextView. We work around the issue by using a global variable to
+        // wrong instance of PTYTextView. We work around the issue by using a global variable to
         // track the instance of PTYTextView that is currently handling a key event and rerouting
         // calls as needed in -insertText and -doCommandBySelector.
         gCurrentKeyEventTextView = [[self retain] autorelease];
@@ -1552,7 +1556,7 @@ static const int kDragThreshold = 3;
     return (_keyIsARepeat);
 }
 
-// WARNING: This indicates if mouse reporting is a possiblity. -terminalWantsMouseReports indicates
+// WARNING: This indicates if mouse reporting is a possibility. -terminalWantsMouseReports indicates
 // if the reporting mode would cause any action to be taken if this returns YES. They should be used
 // in conjunction most of the time.
 - (BOOL)xtermMouseReporting {
@@ -1571,12 +1575,12 @@ static const int kDragThreshold = 3;
     MouseMode mouseMode = [[_dataSource terminal] mouseMode];
     return ([_delegate xtermMouseReporting] &&
             mouseMode != MOUSE_REPORTING_NONE &&
-            mouseMode != MOUSE_REPORTING_HILITE);
+            mouseMode != MOUSE_REPORTING_HIGHLIGHT);
 }
 
 // TODO: disable other, right mouse for inactive panes
 - (void)otherMouseDown:(NSEvent *)event {
-    [_altScreenMouseScrollInferer nonScrollWheelEvent:event];
+    [_altScreenMouseScrollInferrer nonScrollWheelEvent:event];
     [self reportMouseEvent:event];
 
     [pointer_ mouseDown:event
@@ -1586,7 +1590,7 @@ static const int kDragThreshold = 3;
 
 - (void)otherMouseUp:(NSEvent *)event
 {
-    [_altScreenMouseScrollInferer nonScrollWheelEvent:event];
+    [_altScreenMouseScrollInferrer nonScrollWheelEvent:event];
     if ([self reportMouseEvent:event]) {
         return;
     }
@@ -1601,7 +1605,7 @@ static const int kDragThreshold = 3;
 
 - (void)otherMouseDragged:(NSEvent *)event
 {
-    [_altScreenMouseScrollInferer nonScrollWheelEvent:event];
+    [_altScreenMouseScrollInferrer nonScrollWheelEvent:event];
     if ([self reportMouseEvent:event]) {
         return;
     }
@@ -1609,7 +1613,7 @@ static const int kDragThreshold = 3;
 }
 
 - (void)rightMouseDown:(NSEvent*)event {
-    [_altScreenMouseScrollInferer nonScrollWheelEvent:event];
+    [_altScreenMouseScrollInferrer nonScrollWheelEvent:event];
     if ([threeFingerTapGestureRecognizer_ rightMouseDown:event]) {
         DLog(@"Cancel right mouse down");
         return;
@@ -1627,7 +1631,7 @@ static const int kDragThreshold = 3;
 }
 
 - (void)rightMouseUp:(NSEvent *)event {
-    [_altScreenMouseScrollInferer nonScrollWheelEvent:event];
+    [_altScreenMouseScrollInferrer nonScrollWheelEvent:event];
     if ([threeFingerTapGestureRecognizer_ rightMouseUp:event]) {
         return;
     }
@@ -1643,7 +1647,7 @@ static const int kDragThreshold = 3;
 
 - (void)rightMouseDragged:(NSEvent *)event
 {
-    [_altScreenMouseScrollInferer nonScrollWheelEvent:event];
+    [_altScreenMouseScrollInferrer nonScrollWheelEvent:event];
     if ([self reportMouseEvent:event]) {
         return;
     }
@@ -1677,7 +1681,7 @@ static const int kDragThreshold = 3;
     if (alternateMouseScroll || upString.length || downString.length) {
         return YES;
     } else {
-        [_altScreenMouseScrollInferer scrollWheel:event];
+        [_altScreenMouseScrollInferrer scrollWheel:event];
         return NO;
     }
 }
@@ -1787,7 +1791,7 @@ static const int kDragThreshold = 3;
     return _drawingHelper.underlinedRange.coordRange.start.x >= 0;
 }
 
-// Reset underlined chars indicating cmd-clicakble url.
+// Reset underlined chars indicating cmd-clickable url.
 - (void)removeUnderline {
     if (![self hasUnderline]) {
         return;
@@ -1797,7 +1801,7 @@ static const int kDragThreshold = 3;
     [self setNeedsDisplay:YES];  // It would be better to just display the underlined/formerly underlined area.
 }
 
-// Update range of underlined chars indicating cmd-clicakble url.
+// Update range of underlined chars indicating cmd-clickable url.
 - (URLAction *)updateUnderlinedURLs:(NSEvent *)event {
     URLAction *action = nil;
     if (([event modifierFlags] & NSEventModifierFlagCommand) && (self.window.isKeyWindow ||
@@ -2011,7 +2015,7 @@ static const int kDragThreshold = 3;
 }
 
 - (void)mouseDown:(NSEvent *)event {
-    [_altScreenMouseScrollInferer nonScrollWheelEvent:event];
+    [_altScreenMouseScrollInferrer nonScrollWheelEvent:event];
     if ([threeFingerTapGestureRecognizer_ mouseDown:event]) {
         return;
     }
@@ -2075,7 +2079,7 @@ static const int kDragThreshold = 3;
         !cmdPressed &&
         [iTermPreferences boolForKey:kPreferenceKeyFocusFollowsMouse]) {
         // Clicking in an inactive pane with focus follows mouse makes it active.
-        // Becuase of how FFM works, this would only happen if another app were key.
+        // Because of how FFM works, this would only happen if another app were key.
         // See issue 3163.
         DLog(@"Click on inactive pane with focus follows mouse");
         _mouseDownWasFirstMouse = YES;
@@ -2268,7 +2272,7 @@ static double EuclideanDistance(NSPoint p1, NSPoint p2) {
 }
 
 - (void)mouseUp:(NSEvent *)event {
-    [_altScreenMouseScrollInferer nonScrollWheelEvent:event];
+    [_altScreenMouseScrollInferrer nonScrollWheelEvent:event];
     if ([threeFingerTapGestureRecognizer_ mouseUp:event]) {
         return;
     }
@@ -2449,7 +2453,7 @@ static double EuclideanDistance(NSPoint p1, NSPoint p2) {
 
 - (void)mouseDragged:(NSEvent *)event
 {
-    [_altScreenMouseScrollInferer nonScrollWheelEvent:event];
+    [_altScreenMouseScrollInferrer nonScrollWheelEvent:event];
     DLog(@"mouseDragged");
     if (_mouseDownIsThreeFingerClick) {
         DLog(@"is three finger click");
@@ -3160,7 +3164,7 @@ static double EuclideanDistance(NSPoint p1, NSPoint p2) {
         case kiTermWarningSelection2:
             theCommand = @"curl -L https://iterm2.com/shell_integration/install_shell_integration.sh | bash\n";
             break;
-        case kItermWarningSelectionError:
+        default:
             assert(false);
     }
     if (theCommand) {
@@ -5734,7 +5738,7 @@ static double EuclideanDistance(NSPoint p1, NSPoint p2) {
     iTermHighlightedRow *entry = [[iTermHighlightedRow alloc] initWithAbsoluteLineNumber:_dataSource.totalScrollbackOverflow + line
                                                                                  success:!hasErrorCode];
     [_highlightedRows addObject:entry];
-    [_delegate textViewDidHighightMark];
+    [_delegate textViewDidHighlightMark];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(duration * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self removeHighlightedRow:entry];
         [entry release];
@@ -6174,7 +6178,7 @@ static double EuclideanDistance(NSPoint p1, NSPoint p2) {
         }
     }
 
-    // We limit the esarch to 10 lines in each direction.
+    // We limit the search to 10 lines in each direction.
     // See how high the lines of pipes go
     int minY = MAX(0, yi - 10);
     int maxY = MIN(h - 1, yi + 10);
@@ -6954,7 +6958,7 @@ static double EuclideanDistance(NSPoint p1, NSPoint p2) {
     [[self superview] setNeedsDisplay:YES];
 }
 
-#pragma mark - iTermInidcatorsHelperDelegate
+#pragma mark - iTermIndicatorsHelperDelegate
 
 - (NSColor *)indicatorFullScreenFlashColor {
     return [self defaultTextColor];
@@ -7442,9 +7446,9 @@ static double EuclideanDistance(NSPoint p1, NSPoint p2) {
     self.savedSelectedText = nil;
 }
 
-#pragma mark - iTermAltScreenMouseScrollInfererDelegate
+#pragma mark - iTermAltScreenMouseScrollInferrerDelegate
 
-- (void)altScreenMouseScrollInfererDidInferScrollingIntent:(BOOL)isTrying {
+- (void)altScreenMouseScrollInferrerDidInferScrollingIntent:(BOOL)isTrying {
     [_delegate textViewThinksUserIsTryingToSendArrowKeysWithScrollWheel:isTrying];
 }
 

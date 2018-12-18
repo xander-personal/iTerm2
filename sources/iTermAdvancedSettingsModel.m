@@ -9,49 +9,10 @@
 #import <Foundation/Foundation.h>
 
 #import "iTermAdvancedSettingsModel.h"
+#import "iTermUserDefaultsObserver.h"
 #import "NSApplication+iTerm.h"
 #import "NSStringITerm.h"
 #import <objc/runtime.h>
-
-static char iTermAdvancedSettingsModelKVOKey;
-
-@interface iTermAdvancedSettingsModelChangeObserver: NSObject
-- (void)observeKey:(NSString *)key block:(void (^)(void))block;
-@end
-
-@implementation iTermAdvancedSettingsModelChangeObserver {
-    NSMutableDictionary<NSString *, void (^)(void)> *_blocks;
-}
-
-- (instancetype)init {
-    self = [super init];
-    if (self) {
-        _blocks = [NSMutableDictionary dictionary];
-    }
-    return self;
-}
-
-- (void)observeKey:(NSString *)key block:(void (^)(void))block {
-    _blocks[key] = [block copy];
-    [[NSUserDefaults standardUserDefaults] addObserver:self
-                                            forKeyPath:key
-                                               options:NSKeyValueObservingOptionNew
-                                               context:(void *)&iTermAdvancedSettingsModelKVOKey];
-}
-
-// This is called when user defaults are changed anywhere.
-- (void)observeValueForKeyPath:(NSString *)keyPath
-                      ofObject:(id)object
-                        change:(NSDictionary *)change
-                       context:(void *)context {
-    if (context == &iTermAdvancedSettingsModelKVOKey) {
-        void (^block)(void) = _blocks[keyPath];
-        if (block) {
-            block();
-        }
-    }
-}
-@end
 
 
 NSString *const kAdvancedSettingIdentifier = @"kAdvancedSettingIdentifier";
@@ -122,7 +83,7 @@ static inline id iTermAdvancedSettingsModelInverseTransformString(NSString *valu
 
 // name: A token uniquely identifying the property. It is the same as the name of the method to fetch its value.
 // podtype: The data type. For example, BOOL or NSString *
-// type: The iTermAdvancedSettingTyep enum value
+// type: The iTermAdvancedSettingType enum value
 // default: The default value, such as YES or @"foo". Nonnil.
 // transformation: Name of a function (as a token) that converts podtype to id
 // inverseTransformation: Name of a function (as a token) that converts id to podtype
@@ -234,6 +195,7 @@ DEFINE_BOOL(middleClickClosesTab, YES, SECTION_TABS @"Should middle-click on a t
 DEFINE_FLOAT(coloredSelectedTabOutlineStrength, 0.5, SECTION_TABS @"How prominent should the outline around the selected tab be drawn when there are colored tabs in a window?\nTakes a value in 0 to 3, where 0 means no outline and 3 means a very prominent outline.");
 DEFINE_FLOAT(minimalTabStyleBackgroundColorDifference, 0.05, SECTION_TABS @"In minimal tab style, how different should the background color of the selected tab be from the others?\nTakes a value in 0 to 1, where 0 is no difference and 1 very different.");
 DEFINE_FLOAT(minimalTabStyleOutlineStrength, 0.2, SECTION_TABS @"In minimal tab style, how prominent should the tab outline be?\nTakes a value in 0 to 1, where 0 is invisible and 1 is very prominent");
+DEFINE_FLOAT(minimalSplitPaneDividerProminence, 0.15, SECTION_TABS @"In minimal tab style, how prominent should split pane dividers be?\nTakes a value in 0 to 1, where 0 is invisible and 1 is very prominent");
 DEFINE_FLOAT(coloredUnselectedTabTextProminence, 0.1, SECTION_TABS @"How prominent should the text in a non-selected tab be when there are colored tabs in a window?\nTakes a value in 0 to 0.5, the distance from middle gray.");
 DEFINE_FLOAT(compactMinimalTabBarHeight, 40, SECTION_TABS @"Tab bar height (points) for compact windows with minimal theme.");
 
@@ -326,7 +288,7 @@ DEFINE_FLOAT(idleTimeSeconds, 2, SECTION_GENERAL @"Time in seconds before a sess
 DEFINE_FLOAT(findDelaySeconds, 1, SECTION_GENERAL @"Time to wait before performing Find action on 1- or 2- character queries.");
 DEFINE_INT(maximumBytesToProvideToServices, 100000, SECTION_GENERAL @"Maximum number of bytes of selection to provide to Services.\nA large value here can cause performance issues when you have a big selection.");
 DEFINE_BOOL(useOpenDirectory, YES, SECTION_GENERAL @"Use Open Directory to determine the user shell");
-DEFINE_BOOL(disablePotentiallyInsecureEscapeSequences, NO, SECTION_GENERAL @"Disable potentially insecure escape sequences.\nSome features of iTerm2 expand the surface area for security issues. Consider turning this on when viewing untrusted content. The following custom escape sequences will be disabled: RemoteHost, StealFocus, CurrentDir, SetProfile, CopyToClipboard, EndCopy, File, SetBackgroundImageFile. The following DEC sequences are disabled: DECRQCRA. The following xterm extensions are disabled: Window Title Reporting, Icon Title Reporting. This will break displaying inline images, file download, some shell integration features, and other features.");
+DEFINE_BOOL(disablePotentiallyInsecureEscapeSequences, NO, SECTION_GENERAL @"Disable potentially insecure escape sequences.\nSome features of iTerm2 expand the surface area for security issues. Consider turning this on when viewing untrusted content. The following custom escape sequences will be disabled: RemoteHost, StealFocus, CurrentDir, SetProfile, CopyToClipboard, EndCopy, File, SetBackgroundImageFile, OSC 6’s proxy icon-changing feature. The following DEC sequences are disabled: DECRQCRA. The following xterm extensions are disabled: Window Title Reporting, Icon Title Reporting. This will break displaying inline images, file download, some shell integration features, and other features.");
 DEFINE_BOOL(performDictionaryLookupOnQuickLook, YES, SECTION_GENERAL @"Perform dictionary lookups on force press.\nIf this is NO, force press will still preview the Semantic History action; only dictionary lookups can be disabled.");
 DEFINE_BOOL(jiggleTTYSizeOnClearBuffer, NO, SECTION_GENERAL @"Redraw the screen after the Clear Buffer menu item is selected.\nWhen enabled, the TTY size is briefly changed after clearing the buffer to cause the shell or current app to redraw.");
 DEFINE_BOOL(indicateBellsInDockBadgeLabel, YES, SECTION_GENERAL @"Indicate the number of bells rung while the app is inactive in the dock icon’s badge label");
@@ -339,7 +301,7 @@ DEFINE_BOOL(hideStuckTooltips, YES, SECTION_GENERAL @"Hide stuck tooltips.\nWhen
 DEFINE_BOOL(openFileOverridesSendText, YES, SECTION_GENERAL @"Should opening a script with iTerm2 disable the default profile's “Send Text at Start” setting?\nIf you use “open iTerm2 file.command” or drag a script onto iTerm2's icon and this setting is enabled then the script will be executed in lieu of the profile's “Send Text at Start” setting. If this setting is off then both will be executed.");
 DEFINE_BOOL(statusBarIcon, YES, SECTION_GENERAL @"Add status bar icon when excluded from dock?\nWhen you turn on “Exclude from Dock and ⌘-Tab Application Switcher” a status bar icon is added to the menu bar so you can switch the setting back off. Disable this to remove the status bar icon. Doing so makes it very hard to get to Preferences. You must restart iTerm2 after changing this setting.");
 DEFINE_BOOL(wrapFocus, YES, SECTION_GENERAL @"Should split pane navigation by direction wrap around?");
-DEFINE_BOOL(openUntitledFile, YES, SECTION_GENERAL @"Open a new window when you click the dock icon and no windows are already open?");
+DEFINE_BOOL(openUntitledFile, YES, SECTION_GENERAL @"Open a new window when you click the dock icon and no windows are already open, and also on app launch when no other windows are open?");
 DEFINE_BOOL(openNewWindowAtStartup, YES, SECTION_GENERAL @"Open a window at startup?\nThis is useful if you wish to use the system window restoration settings but not create a new window if none would be restored.");
 DEFINE_FLOAT(timeToWaitForEmojiPanel, 1, SECTION_GENERAL @"How long to wait for the emoji panel to open in seconds?\nFloating hotkey windows adjust their level when the emoji panel is open. If it’s really slow you might need to increase this value to prevent it from appearing beneath a floating hotkey window.");
 DEFINE_FLOAT(timeoutForStringEvaluation, 10, SECTION_GENERAL @"Timeout (seconds) for evaluating RPCs.\nThis applies to invoking functions registered by scripts when using the Swift syntax for inline expressions.");
@@ -348,7 +310,7 @@ DEFINE_STRING(pathToTelnet, @"telnet", SECTION_GENERAL @"Path to telnet for open
 DEFINE_STRING(fallbackLCCType, @"", SECTION_GENERAL @"Value to set LC_CTYPE to if the machine‘s combination of country and language are not supported.\nIf unset, the encoding (e.g., UTF-8) will be used.");
 // See issue 6994
 DEFINE_BOOL(useVirtualKeyCodesForDetectingDigits, NO, SECTION_GENERAL @"Treat the top row of keys like number keys on an English keyboard for the purposes of switching panes, tabs, and windows with modifier+number.\nFor example, AZERTY requires you to hold down Shift to enter a number. To switch tabs with ⌘+Number on an AZERTY keyboard, you must enable this setting. Then, for example, ⌘-& switches to tab 1. When this setting is enabled, some user-defined shortcuts may become unavailable because the tab/window/pane switching behavior takes precedence.");
-DEFINE_BOOL(hotkeyWindowsExcludedFromCycling, YES, SECTION_GENERAL @"Hotkey windows are excluded from Cycle Through Windows.");
+DEFINE_BOOL(hotkeyWindowsExcludedFromCycling, NO, SECTION_GENERAL @"Hotkey windows are excluded from Cycle Through Windows.");
 
 #pragma mark - Drawing
 
@@ -448,7 +410,7 @@ DEFINE_BOOL(noSyncNeverRemindPrefsChangesLostForUrl, NO, SECTION_WARNINGS @"Supp
 DEFINE_BOOL(noSyncNeverRemindPrefsChangesLostForFile, NO, SECTION_WARNINGS @"Suppress changed-setting warning when prefs are loaded from a custom folder.");
 DEFINE_BOOL(noSyncSuppressAnnyoingBellOffer, NO, SECTION_WARNINGS @"Suppress offer to silence bell when it rings too much.");
 
-DEFINE_BOOL(suppressMultilinePasteWarningWhenPastingOneLineWithTerminalNewline, NO, SECTION_WARNINGS @"Suppress warning about multi-line paste when pasting a single line ending with a newline.\nThis supresses all multi-line paste warnings when a single line is being pasted.");
+DEFINE_BOOL(suppressMultilinePasteWarningWhenPastingOneLineWithTerminalNewline, NO, SECTION_WARNINGS @"Suppress warning about multi-line paste when pasting a single line ending with a newline.\nThis suppresses all multi-line paste warnings when a single line is being pasted.");
 DEFINE_BOOL(suppressMultilinePasteWarningWhenNotAtShellPrompt, NO, SECTION_WARNINGS @"Suppress warning about multi-line paste when not at prompt.\nRequires Shell Integration to be installed.");
 DEFINE_BOOL(noSyncSuppressBroadcastInputWarning, NO, SECTION_WARNINGS @"Suppress warning about broadcasting input.");
 DEFINE_BOOL(noSyncSuppressCaptureOutputRequiresShellIntegrationWarning, NO,
@@ -520,7 +482,7 @@ DEFINE_BOOL(supportREPCode, YES, SECTION_EXPERIMENTAL @"Enable support for REP (
 
 DEFINE_BOOL(showMetalFPSmeter, NO, SECTION_EXPERIMENTAL @"Show FPS meter\nRequires Metal renderer");
 
-// TODO: Turn this back on by default in a few days. Let's see if it is responsible for the spike in nightly build crasehs starting with the 3-12-2018 build.
+// TODO: Turn this back on by default in a few days. Let's see if it is responsible for the spike in nightly build crashes starting with the 3-12-2018 build.
 // The number of crashes fell off a cliff starting with the 3/18 build (usually 0, never more than 2/day, while it had been at 47 on the 3/15 build). I'm switching the default back to YES for the 4/18 build to see if the number climbs.
 DEFINE_BOOL(disableMetalWhenIdle, NO, SECTION_EXPERIMENTAL @"Disable metal renderer when idle to save CPU utilization?\nRequires Metal renderer");
 
@@ -543,8 +505,8 @@ DEFINE_STRING(pythonRuntimeDownloadURL, @"https://iterm2.com/downloads/pyenv/man
 
 + (void)initialize {
     if (self == [iTermAdvancedSettingsModel self]) {
-        static iTermAdvancedSettingsModelChangeObserver *observer;
-        observer = [[iTermAdvancedSettingsModelChangeObserver alloc] init];
+        static iTermUserDefaultsObserver *observer;
+        observer = [[iTermUserDefaultsObserver alloc] init];
         [self enumerateMethods:^(Method method, SEL selector) {
             NSString *name = NSStringFromSelector(selector);
             if ([name hasPrefix:@"load_"]) {

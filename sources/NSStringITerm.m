@@ -1799,6 +1799,15 @@ static TECObjectRef CreateTECConverterForUTF8Variants(TextEncodingVariant varian
     return range.location == NSNotFound;
 }
 
+- (BOOL)startsWithDigit {
+    if (![self length]) {
+        return NO;
+    }
+
+    NSCharacterSet *digitsSet = [NSCharacterSet decimalDigitCharacterSet];
+    return [digitsSet characterIsMember:[self characterAtIndex:0]];
+}
+
 - (NSRange)makeRangeSafe:(NSRange)range {
     if (range.location == NSNotFound || range.length == 0) {
         return range;
@@ -2028,6 +2037,10 @@ static TECObjectRef CreateTECConverterForUTF8Variants(TextEncodingVariant varian
     NSArray *characters = @[ @"▁", @"▂", @"▃", @"▄", @"▅", @"▆", @"▇", @"█" ];
     int index = round(fraction * (characters.count - 1));
     return characters[index];
+}
+
+- (id)it_jsonSafeValue {
+    return self;
 }
 
 @end

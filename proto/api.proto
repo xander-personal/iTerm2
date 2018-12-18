@@ -46,6 +46,7 @@ message ClientOriginatedMessage {
     SelectionRequest selection_request = 128;
     StatusBarComponentRequest status_bar_component_request = 129;
     SetBroadcastDomainsRequest set_broadcast_domains_request = 130;
+    CloseRequest close_request = 131;
   }
 }
 
@@ -89,10 +90,38 @@ message ServerOriginatedMessage {
     SelectionResponse selection_response = 128;
     StatusBarComponentResponse status_bar_component_response = 129;
     SetBroadcastDomainsResponse set_broadcast_domains_response = 130;
+    CloseResponse close_response = 131;
 
     // This is the only response that is sent spontaneously. The 'id' field will not be set.
     Notification notification = 1000;
   }
+}
+
+message CloseRequest {
+  message CloseTabs {
+    repeated string tab_ids = 1;
+  }
+  message CloseSessions {
+    repeated string session_ids = 1;
+  }
+  message CloseWindows {
+    repeated string window_ids = 1;
+  }
+  oneof target {
+    CloseTabs tabs = 1;
+    CloseSessions sessions = 2;
+    CloseWindows windows = 3;
+  }
+  optional bool force = 4;
+}
+
+message CloseResponse {
+  enum Status {
+    OK = 0;
+    NOT_FOUND = 1;
+    USER_DECLINED = 2;
+  }
+  repeated Status statuses = 1;
 }
 
 message SetBroadcastDomainsRequest {
@@ -477,7 +506,7 @@ message SavedArrangementRequest {
     // Restore an existing arrangement with the given name
     RESTORE = 0;
 
-    // Save windows to a new arrangment with the given name
+    // Save windows to a new arrangement with the given name
     SAVE = 1;
   }
   optional Action action = 2;
@@ -746,6 +775,7 @@ enum NotificationType {
   NOTIFY_ON_LOCATION_CHANGE = 4;
   NOTIFY_ON_CUSTOM_ESCAPE_SEQUENCE = 5;
   NOTIFY_ON_VARIABLE_CHANGE = 12;
+  KEYSTROKE_FILTER = 14;  // Does not send a notification
 
   // Notifications that ignore the `session` parameter.
   NOTIFY_ON_NEW_SESSION = 6;
@@ -783,6 +813,11 @@ message KeystrokePattern {
 }
 
 message KeystrokeMonitorRequest {
+  // KeystrokeFilterRequest was split from this to make a more sensible API.
+  repeated KeystrokePattern patterns_to_ignore = 1 [deprecated=true];
+}
+
+message KeystrokeFilterRequest {
   // If a keystroke matches any of these patterns then they will not be handled by the application.
   // A notification will be posted and the script can handle it as it pleases.
   repeated KeystrokePattern patterns_to_ignore = 1;
@@ -823,6 +858,7 @@ message NotificationRequest {
     KeystrokeMonitorRequest keystroke_monitor_request = 5;
     VariableMonitorRequest variable_monitor_request = 6;
     ProfileChangeRequest profile_change_request = 7;
+    KeystrokeFilterRequest keystroke_filter_request = 8;
   }
 }
 
@@ -1009,7 +1045,7 @@ message GetPromptRequest {
   optional string session = 1;
 }
 
-// Reponds with metadata about the current shell prompt, if possible.
+// Responds with metadata about the current shell prompt, if possible.
 message GetPromptResponse {
   enum Status {
     OK = 0;
@@ -1289,7 +1325,7 @@ message LineContents {
   // of a line, but it is possible.
   //
   // The ñ is composed of the letter n and a combining tilde (U+0303) (indicated in our example
-  // as ~), while í is composed of the leter i and a combining acute accent (U+0301) (indicated in
+  // as ~), while í is composed of the letter i and a combining acute accent (U+0301) (indicated in
   // our example as ').
   //
   // To map code points in `text` to screen positions, `code_points_per_cell`

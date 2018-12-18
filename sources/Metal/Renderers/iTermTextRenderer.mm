@@ -141,7 +141,7 @@ static BOOL gMonochromeText;
     float stride = 255.0/17.0;
     for (float textColor = 0; textColor < 256; textColor += stride) {
         for (float backgroundColor = 0; backgroundColor < 256; backgroundColor += stride) {
-            iTermSubpixelModel *model = [[iTermSubpixelModelBuilder sharedInstance] modelForForegoundColor:MIN(MAX(0, textColor / 255.0), 1)
+            iTermSubpixelModel *model = [[iTermSubpixelModelBuilder sharedInstance] modelForForegroundColor:MIN(MAX(0, textColor / 255.0), 1)
                                                                                            backgroundColor:MIN(MAX(0, backgroundColor / 255.0), 1)];
             block(textColor, backgroundColor, model);
         }
@@ -295,6 +295,7 @@ static BOOL gMonochromeText;
     tState.asciiTextureGroup = _asciiTextureGroup;
     tState.texturePageCollectionSharedPointer = _texturePageCollectionSharedPointer;
     tState.numberOfCells = tState.cellConfiguration.gridSize.width * tState.cellConfiguration.gridSize.height;
+    tState.asciiOffset = _asciiOffset;
 }
 
 - (id<MTLBuffer>)quadOfSize:(CGSize)size
@@ -573,16 +574,18 @@ static NSString *const VertexFunctionName(const BOOL &underlined,
 }
 
 - (void)setASCIICellSize:(CGSize)cellSize
-               glyphSize:(CGSize)glyphSize
+                  offset:(CGSize)asciiOffset
+              descriptor:(iTermCharacterSourceDescriptor *)descriptor
       creationIdentifier:(id)creationIdentifier
                 creation:(NSDictionary<NSNumber *, iTermCharacterBitmap *> *(^)(char, iTermASCIITextureAttributes))creation {
-    iTermASCIITextureGroup *replacement = [[iTermASCIITextureGroup alloc] initWithGlyphSize:glyphSize
-                                                                                     device:_cellRenderer.device
-                                                                         creationIdentifier:(id)creationIdentifier
-                                                                                   creation:creation];
+    iTermASCIITextureGroup *replacement = [[iTermASCIITextureGroup alloc] initWithDevice:_cellRenderer.device
+                                                                      creationIdentifier:(id)creationIdentifier
+                                                                              descriptor:descriptor
+                                                                                creation:creation];
     if (![replacement isEqual:_asciiTextureGroup]) {
         _asciiTextureGroup = replacement;
     }
+    _asciiOffset = asciiOffset;
 }
 
 - (void)writeDebugInfoToFolder:(NSURL *)folder {

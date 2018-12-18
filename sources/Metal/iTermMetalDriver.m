@@ -79,6 +79,7 @@ typedef struct {
     int columns;
     CGFloat scale;
     CGSize glyphSize;
+    CGSize asciiOffset;
     CGContextRef context;
 } iTermMetalDriverMainThreadState;
 
@@ -253,6 +254,7 @@ typedef struct {
 cellSizeWithoutSpacing:(CGSize)cellSizeWithoutSpacing
           glyphSize:(CGSize)glyphSize
            gridSize:(VT100GridSize)gridSize
+        asciiOffset:(CGSize)asciiOffset
               scale:(CGFloat)scale
             context:(CGContextRef)context {
     scale = MAX(1, scale);
@@ -280,6 +282,7 @@ cellSizeWithoutSpacing:(CGSize)cellSizeWithoutSpacing
     self.mainThreadState->columns = MAX(1, gridSize.width);
     self.mainThreadState->scale = scale;
     self.mainThreadState->glyphSize = glyphSize;
+    self.mainThreadState->asciiOffset = asciiOffset;
     self.mainThreadState->context = context;
 }
 
@@ -326,7 +329,7 @@ cellSizeWithoutSpacing:(CGSize)cellSizeWithoutSpacing
     }
 
     const CGFloat slowEnoughToDowngradeThreshold = 0.002;
-    const CGFloat fastEnoughToUpgradeTreshold = 0.0005;
+    const CGFloat fastEnoughToUpgradeThreshold = 0.0005;
     if (_currentDrawableTime.numberOfMeasurements > 5 &&
         _maxFramesInFlight > 1 &&
         _currentDrawableTime.value > slowEnoughToDowngradeThreshold) {
@@ -339,7 +342,7 @@ cellSizeWithoutSpacing:(CGSize)cellSizeWithoutSpacing
         [_currentDrawableTime reset];
     } else if (_currentDrawableTime.numberOfMeasurements > 10 &&
                _maxFramesInFlight < iTermMetalDriverMaximumNumberOfFramesInFlight &&
-               _currentDrawableTime.value < fastEnoughToUpgradeTreshold) {
+               _currentDrawableTime.value < fastEnoughToUpgradeThreshold) {
         DLog(@"Moving average of currentDrawable latency of %0.2fms with %@ measurements with mff of %@ is low. Increase mff to %@",
               _currentDrawableTime.value * 1000,
               @(_currentDrawableTime.numberOfMeasurements),
@@ -472,11 +475,16 @@ cellSizeWithoutSpacing:(CGSize)cellSizeWithoutSpacing
 
 // Called on the main queue
 - (iTermMetalFrameData *)newFrameDataForView:(MTKView *)view {
+    if (![_dataSource metalDriverShouldDrawFrame]) {
+        DLog(@"Metal driver declined to draw");
+        return nil;
+    }
     iTermMetalFrameData *frameData = [[iTermMetalFrameData alloc] initWithView:view
                                                            fullSizeTexturePool:_fullSizeTexturePool];
 
     [frameData measureTimeForStat:iTermMetalFrameDataStatMtExtractFromApp ofBlock:^{
         frameData.viewportSize = self.mainThreadState->viewportSize;
+        frameData.asciiOffset = self.mainThreadState->asciiOffset;
 
         // This is the slow part
         frameData.perFrameState = [self->_dataSource metalDriverWillBeginDrawingFrame];
@@ -567,8 +575,8 @@ cellSizeWithoutSpacing:(CGSize)cellSizeWithoutSpacing
 #endif
 
     [frameData enqueueDrawCallsWithBlock:^{
-        [self enequeueDrawCallsForFrameData:frameData
-                              commandBuffer:commandBuffer];
+        [self enqueueDrawCallsForFrameData:frameData
+                             commandBuffer:commandBuffer];
     }];
     for (iTermMetalRowData *rowData in frameData.rows) {
         [rowData.lineData checkForOverrun];
@@ -790,9 +798,9 @@ cellSizeWithoutSpacing:(CGSize)cellSizeWithoutSpacing
     }
 }
 
-- (void)enequeueDrawCallsForFrameData:(iTermMetalFrameData *)frameData
-                        commandBuffer:(id<MTLCommandBuffer>)commandBuffer {
-    DLog(@"  enequeueDrawCallsForFrameData %@", frameData);
+- (void)enqueueDrawCallsForFrameData:(iTermMetalFrameData *)frameData
+                       commandBuffer:(id<MTLCommandBuffer>)commandBuffer {
+    DLog(@"  enqueueDrawCallsForFrameData %@", frameData);
 
     NSString *firstLabel;
     if (frameData.intermediateRenderPassDescriptor) {
@@ -860,30 +868,45 @@ cellSizeWithoutSpacing:(CGSize)cellSizeWithoutSpacing
     CGFloat scale = frameData.scale;
     __weak iTermMetalFrameData *weakFrameData = frameData;
     [_textRenderer setASCIICellSize:cellSize
-                          glyphSize:glyphSize
-                 creationIdentifier:[frameData.perFrameState metalASCIICreationIdentifier]
-                           creation:^NSDictionary<NSNumber *, iTermCharacterBitmap *> * _Nonnull(char c, iTermASCIITextureAttributes attributes) {
+                             offset:frameData.asciiOffset
+                         descriptor:[frameData.perFrameState characterSourceDescriptorForASCIIWithGlyphSize:glyphSize
+                                                                                                asciiOffset:frameData.asciiOffset]
+                 creationIdentifier:[frameData.perFrameState metalASCIICreationIdentifierWithOffset:frameData.asciiOffset]
+                           creation:^NSDictionary<NSNumber *, iTermCharacterBitmap *> *(char c, iTermASCIITextureAttributes attributes) {
                                __typeof(self) strongSelf = weakSelf;
                                iTermMetalFrameData *strongFrameData = weakFrameData;
                                if (strongSelf && strongFrameData) {
-                                   static const int typefaceMask = ((1 << iTermMetalGlyphKeyTypefaceNumberOfBitsNeeded) - 1);
-                                   iTermMetalGlyphKey glyphKey = {
-                                       .code = c,
-                                       .isComplex = NO,
-                                       .boxDrawing = NO,
-                                       .thinStrokes = !!(attributes & iTermASCIITextureAttributesThinStrokes),
-                                       .drawable = YES,
-                                       .typeface = (attributes & typefaceMask),
-                                   };
-                                   BOOL emoji = NO;
-                                   return [strongFrameData.perFrameState metalImagesForGlyphKey:&glyphKey
-                                                                                           size:glyphSize
-                                                                                          scale:scale
-                                                                                          emoji:&emoji];
+                                   return [strongSelf dictionaryForCharacter:c
+                                                              withAttributes:attributes
+                                                                   frameData:strongFrameData
+                                                                   glyphSize:glyphSize
+                                                                       scale:scale];
                                } else {
                                    return nil;
                                }
                            }];
+}
+
+- (NSDictionary<NSNumber *, iTermCharacterBitmap *> *)dictionaryForCharacter:(char)c
+                                                              withAttributes:(iTermASCIITextureAttributes)attributes
+                                                                   frameData:(iTermMetalFrameData *)frameData
+                                                                   glyphSize:(CGSize)glyphSize
+                                                                       scale:(CGFloat)scale {
+    static const int typefaceMask = ((1 << iTermMetalGlyphKeyTypefaceNumberOfBitsNeeded) - 1);
+    iTermMetalGlyphKey glyphKey = {
+        .code = c,
+        .isComplex = NO,
+        .boxDrawing = NO,
+        .thinStrokes = !!(attributes & iTermASCIITextureAttributesThinStrokes),
+        .drawable = YES,
+        .typeface = (attributes & typefaceMask),
+    };
+    BOOL emoji = NO;
+    return [frameData.perFrameState metalImagesForGlyphKey:&glyphKey
+                                               asciiOffset:frameData.asciiOffset
+                                                      size:glyphSize
+                                                     scale:scale
+                                                     emoji:&emoji];
 }
 
 - (void)updateBackgroundImageRendererForFrameData:(iTermMetalFrameData *)frameData {
@@ -1092,7 +1115,7 @@ cellSizeWithoutSpacing:(CGSize)cellSizeWithoutSpacing
             rowData.y <= imeInfo.markedRange.end.y) {
             // This line contains at least part of the marked range
             if (rowData.y == imeInfo.markedRange.start.y) {
-                // Makred range starts on this line
+                // Marked range starts on this line
                 if (rowData.y == imeInfo.markedRange.end.y) {
                     // Marked range starts and ends on this line.
                     markedRangeOnLine = NSMakeRange(imeInfo.markedRange.start.x,
@@ -1130,6 +1153,7 @@ cellSizeWithoutSpacing:(CGSize)cellSizeWithoutSpacing
                                 context:textState.poolContext
                                creation:^NSDictionary<NSNumber *, iTermCharacterBitmap *> * _Nonnull(int x, BOOL *emoji) {
                                    return [frameData.perFrameState metalImagesForGlyphKey:&glyphKeys[x]
+                                                                              asciiOffset:frameData.asciiOffset
                                                                                      size:glyphSize
                                                                                     scale:scale
                                                                                     emoji:emoji];
@@ -1291,7 +1315,7 @@ cellSizeWithoutSpacing:(CGSize)cellSizeWithoutSpacing
 }
 
 // frameData's renderEncoder must have just had -endEncoding called on it at this point.
-// It will be left in the same staate.
+// It will be left in the same state.
 - (void)copyOffscreenTextureToDrawableInFrameData:(iTermMetalFrameData *)frameData {
     [self copyToDrawableFromTexture:frameData.destinationTexture
            withRenderPassDescriptor:frameData.debugRealRenderPassDescriptor

@@ -212,7 +212,7 @@ static BOOL gShowingWarning;
             alert.suppressionButton.title = @"Remember my choice for ten minutes";
         }
         alert.showsSuppressionButton = YES;
-    } else if (_warningType == kiTermWarningTypeSilencableForOneMonth) {
+    } else if (_warningType == kiTermWarningTypeSilenceableForOneMonth) {
         assert(_identifier);
         if (numNonCancelActions == 1) {
             alert.suppressionButton.title = @"Suppress this message for 30 days";
@@ -272,6 +272,10 @@ static BOOL gShowingWarning;
             selection = [self.class remapSelection:kiTermWarningSelection2 withMapping:_actionToSelectionMap];
             remember = ![_warningActions[2].label isEqualToString:_cancelLabel];
             break;
+        case NSAlertThirdButtonReturn + 1:
+            selection = [self.class remapSelection:kiTermWarningSelection3 withMapping:_actionToSelectionMap];
+            remember = ![_warningActions[3].label isEqualToString:_cancelLabel];
+            break;
         default:
             selection = kItermWarningSelectionError;
     }
@@ -283,7 +287,7 @@ static BOOL gShowingWarning;
             NSString *theKey = [self.class temporarySilenceKeyForIdentifier:_identifier];
             [userDefaults setDouble:[NSDate timeIntervalSinceReferenceDate] + kTemporarySilenceTime
                              forKey:theKey];
-        } else if (_warningType == kiTermWarningTypeSilencableForOneMonth) {
+        } else if (_warningType == kiTermWarningTypeSilenceableForOneMonth) {
             NSString *theKey = [self.class temporarySilenceKeyForIdentifier:_identifier];
             [userDefaults setDouble:[NSDate timeIntervalSinceReferenceDate] + kOneMonthTime
                              forKey:theKey];

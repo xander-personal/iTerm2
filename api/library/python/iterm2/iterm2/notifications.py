@@ -4,6 +4,7 @@ This module provides functions that let you subscribe and unsubscribe from notif
 posts notifications when some event of interest (for example, a keystroke) occurs. By subscribing to
 a notifications your async callback will be run when the event occurs.
 """
+import asyncio
 import enum
 import iterm2.api_pb2
 import iterm2.connection
@@ -13,13 +14,6 @@ import iterm2.variables
 RPC_ROLE_GENERIC = iterm2.api_pb2.RPCRegistrationRequest.Role.Value("GENERIC")
 RPC_ROLE_SESSION_TITLE = iterm2.api_pb2.RPCRegistrationRequest.Role.Value("SESSION_TITLE")
 RPC_ROLE_STATUS_BAR_COMPONENT = iterm2.api_pb2.RPCRegistrationRequest.Role.Value("STATUS_BAR_COMPONENT")
-
-MODIFIER_CONTROL = iterm2.api_pb2.Modifiers.Value("CONTROL")
-MODIFIER_OPTION = iterm2.api_pb2.Modifiers.Value("OPTION")
-MODIFIER_COMMAND = iterm2.api_pb2.Modifiers.Value("COMMAND")
-MODIFIER_SHIFT = iterm2.api_pb2.Modifiers.Value("SHIFT")
-MODIFIER_FUNCTION = iterm2.api_pb2.Modifiers.Value("FUNCTION")
-MODIFIER_NUMPAD = iterm2.api_pb2.Modifiers.Value("NUMPAD")
 
 def _get_handlers():
     """Returns the registered notification handlers.
@@ -52,7 +46,12 @@ async def async_unsubscribe(connection, token):
         del _get_handlers()[key]
         if len(key) == 2:
             session, notification_type = key
-            await _async_subscribe(connection, False, notification_type, None, session=session)
+            await _async_subscribe(
+                connection,
+                False,
+                notification_type,
+                coro,
+                session=session)
         else:
             if key[-1] == iterm2.api_pb2.NOTIFY_ON_VARIABLE_CHANGE:
                 scope, identifier, name, notification_type = key
@@ -64,7 +63,7 @@ async def async_unsubscribe(connection, token):
                         connection,
                         False,
                         notification_type,
-                        None,
+                        coro,
                         key=key,
                         variable_monitor_request=request)
             else:
@@ -83,7 +82,7 @@ async def async_subscribe_to_new_session_notification(connection, callback):
     """
     return await _async_subscribe(connection, True, iterm2.api_pb2.NOTIFY_ON_NEW_SESSION, callback)
 
-async def async_subscribe_to_keystroke_notification(connection, callback, session=None, patterns_to_ignore=[]):
+async def async_subscribe_to_keystroke_notification(connection, callback, session=None):
     """
     Registers a callback to be run when a key is pressed.
 
@@ -91,18 +90,35 @@ async def async_subscribe_to_keystroke_notification(connection, callback, sessio
     :param callback: A coroutine taking two arguments: an :class:`Connection` and
       iterm2.api_pb2.KeystrokeNotification.
     :param session: The session to monitor, or None.
-    :param patterns_to_ignore: A list of keystroke patterns that iTerm2 should not handle, expecting the script will handle it alone. Objects are class :class:`KeystrokePattern`.
 
     Returns: A token that can be passed to unsubscribe.
     """
-    kmr = None
-    if patterns_to_ignore:
-        kmr = iterm2.api_pb2.KeystrokeMonitorRequest()
-        kmr.patterns_to_ignore.extend(list(map(lambda x: x.to_proto(), patterns_to_ignore)))
     return await _async_subscribe(
         connection,
         True,
         iterm2.api_pb2.NOTIFY_ON_KEYSTROKE,
+        callback,
+        session=session,
+        keystroke_monitor_request=None)
+
+async def async_filter_keystrokes(connection, patterns_to_ignore, session=None):
+    """
+    Subscribe to a pseudo-notification that causes keystrokes matching patterns to be ignored.
+
+    :param connection: A connected :class:`Connection`.
+    :param patterns_to_ignore: A list of keystroke patterns that iTerm2 should not handle, expecting the script will handle it alone. Objects are class :class:`KeystrokePattern`.
+    :param session: The session to monitor, or None.
+
+    Returns: A token that can be passed to unsubscribe.
+    """
+    kmr = iterm2.api_pb2.KeystrokeMonitorRequest()
+    kmr.patterns_to_ignore.extend(list(map(lambda x: x.to_proto(), patterns_to_ignore)))
+    async def callback(connection, notif):
+      pass
+    return await _async_subscribe(
+        connection,
+        True,
+        iterm2.api_pb2.KEYSTROKE_FILTER,
         callback,
         session=session,
         keystroke_monitor_request=kmr)
@@ -366,6 +382,19 @@ def _string_rpc_registration_request(rpc):
 async def _async_subscribe(connection, subscribe, notification_type, callback, session=None, rpc_registration_request=None, keystroke_monitor_request=None, variable_monitor_request=None, key=None, profile_change_request=None):
     _register_helper_if_needed()
     transformed_session = session if session is not None else "all"
+
+    # Register locally in case iTerm2 responds with an RPC immediately.
+    # That is typical when registering a session title provider when a session is already open.
+    if subscribe:
+        if key:
+            _register_notification_handler_impl(key, callback)
+        else:
+            _register_notification_handler(
+                    session,
+                    _string_rpc_registration_request(rpc_registration_request),
+                    notification_type,
+                    callback)
+
     response = await iterm2.rpc.async_notification_request(
         connection,
         subscribe,
@@ -378,18 +407,34 @@ async def _async_subscribe(connection, subscribe, notification_type, callback, s
     status = response.notification_response.status
     status_ok = (status == iterm2.api_pb2.NotificationResponse.Status.Value("OK"))
 
+    unregister = False
     if subscribe:
         already = (status == iterm2.api_pb2.NotificationResponse.Status.Value("ALREADY_SUBSCRIBED"))
         if status_ok or already:
             if key:
-                _register_notification_handler_impl(key, callback)
                 return (key, callback)
             else:
-                _register_notification_handler(session, _string_rpc_registration_request(rpc_registration_request), notification_type, callback)
                 return ((session, notification_type), callback)
+        else:
+            # Uh oh, undo the registration.
+            unregister = True
     else:
         # Unsubscribe
         if status_ok:
+            unregister = True
+
+    if unregister:
+        if key:
+            _unregister_notification_handler_impl(key, callback)
+        else:
+            _unregister_notification_handler(
+                session,
+                _string_rpc_registration_request(rpc_registration_request),
+                notification_type,
+                callback)
+
+        if not subscribe and status_ok:
+            # Normal code path for unsubscribe
             return
 
     raise SubscriptionException(iterm2.api_pb2.NotificationResponse.Status.Name(status))
@@ -490,81 +535,58 @@ def _register_notification_handler_impl(key, coro):
     else:
         _get_handlers()[key] = [coro]
 
-class KeystrokePattern:
-    """Describes attributes that select keystrokes.
+def _unregister_notification_handler(session, rpc_registration_request, notification_type, coro):
+    assert coro is not None
 
-    Keystrokes contain modifiers (e.g., command or option), characters (what
-    characters are generated by the keypress), and characters ignoring
-    modifiers (what characters would be generated if no modifiers were pressed,
-    excpeting the shift key).
-    """
-    def __init__(self):
-        self.__required_modifiers = []
-        self.__forbidden_modifiers = []
-        self.__keycodes = []
-        self.__characters = []
-        self.__characters_ignoring_modifiers = []
+    if rpc_registration_request is None:
+        key = (session, notification_type)
+    else:
+        key = (session, notification_type, rpc_registration_request)
+    _unregister_notification_handler_impl(key, coro)
 
-    @property
-    def required_modifiers(self):
-        """List of modifiers that are required to match the pattern.
+def _unregister_notification_handler_impl(key, coro):
+    if key in _get_handlers():
+        if coro in _get_handlers()[key]:
+            _get_handlers()[key].remove(coro)
 
-        Allowed values are: `MODIFIER_CONTROL`, `MODIFIER_OPTION`, `MODIFIER_COMMAND`, `MODIFIER_SHIFT`, `MODIFIER_FUNCTION`, `MODIFIER_NUMPAD`
+class NewSessionMonitor:
+    """Watches for the creation of new sessions.
+
+      :param connection: The :class:`iterm2.Connection` to use.
+
+       Example:
+
+       .. code-block:: python
+
+           app = await iterm2.async_get_app(connection)
+           async with NewSessionMonitor(connection) as mon:
+               while True:
+                   session_id = await mon.async_get()
+                   DoSomethingWithSession(app.get_session_by_id(session_id))
+
+      """
+    def __init__(self, connection):
+        self.__connection = connection
+        self.__queue = asyncio.Queue(loop=asyncio.get_event_loop())
+
+    async def __aenter__(self):
+        async def callback(_connection, message):
+            """Called when a new session is created."""
+            await self.__queue.put(message)
+
+        self.__token = await async_subscribe_to_new_session_notification(
+                self.__connection,
+                callback)
+        return self
+
+    async def async_get(self):
         """
-        return self.__required_modifiers
-
-    @required_modifiers.setter
-    def required_modifiers(self, value):
-        self.__required_modifiers = value
-
-    @property
-    def forbidden_modifiers(self):
-        """List of modifiers whose presence prevents the pattern from being matched.
-
-        Allowed values are: `MODIFIER_CONTROL`, `MODIFIER_OPTION`, `MODIFIER_COMMAND`, `MODIFIER_SHIFT`, `MODIFIER_FUNCTION`, `MODIFIER_NUMPAD`
+        Returns the new session ID.
         """
-        return self.__forbidden_modifiers
+        result = await self.__queue.get()
+        session_id = result.uniqueIdentifier
+        return session_id
 
-    @forbidden_modifiers.setter
-    def forbidden_modifiers(self, value):
-        self.__forbidden_modifiers = value
+    async def __aexit__(self, exc_type, exc, _tb):
+        await async_unsubscribe(self.__connection, self.__token)
 
-    @property
-    def keycodes(self):
-        """List of numeric keycodes that match the pattern. Values are numbers."""
-        return self.__keycodes
-
-    @keycodes.setter
-    def keycodes(self, value):
-        self.__keycodes = value
-
-    @property
-    def characters(self):
-        """List of characters that match the pattern. Values are strings (typically one character-long strings)."""
-        return self.__characters
-
-    @characters.setter
-    def characters(self, value):
-        self.__characters = value
-
-    @property
-    def characters_ignoring_modifiers(self):
-        """List of characters "ignoring modifiers" that match the pattern.
-
-        "Ignoring modifiers" mostly means ignoring modifiers other than Shift. It has a lot of surprising edge cases which Apple did not document, so experiment to find how it works.
-
-        Values are strings (typically one character-long strings)."""
-        return self.__characters_ignoring_modifiers
-
-    @characters_ignoring_modifiers.setter
-    def characters_ignoring_modifiers(self, value):
-        self.__characters_ignoring_modifiers = value
-
-    def to_proto(self):
-        proto = iterm2.api_pb2.KeystrokePattern()
-        proto.required_modifiers.extend(self.__required_modifiers)
-        proto.forbidden_modifiers.extend(self.__forbidden_modifiers)
-        proto.keycodes.extend(self.__keycodes)
-        proto.characters.extend(self.__characters)
-        proto.characters_ignoring_modifiers.extend(self.__characters_ignoring_modifiers)
-        return proto
